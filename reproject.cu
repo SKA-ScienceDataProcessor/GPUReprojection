@@ -21,6 +21,15 @@
 #define R2D (180/3.1415926)
 #define D2R (3.1415926/180)
 
+#define PAD_SIZE 1
+#define IMG_SIZE 4096
+#define IMG_PAD (IMG_SIZE+2*PAD_SIZE)
+#define IMGX0 0.0
+#define IMGX1 0.4
+#define IMGY0 -0.4
+#define IMGY1 0.0
+
+
 void checkCudaError(int line, const char* filename) {
    cudaError_t err = cudaGetLastError();
    if (err) std::cerr << "Cuda error " << err << "(" << cudaGetErrorString(err) <<
@@ -726,6 +735,27 @@ int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, dou
 
   return status;
 }
+__global__ void interp_kernel(const double* x3, const double* y3, const double2* img_orig, int sz, 
+                              double xgrid, double ygrid, double2* img_out) {
+      int z = threadIdx.x + blockIdx.x * blockDim.x;
+      if (z>sz) return;
+      double thisx = x3[z]-IMGX0;
+      double thisy = y3[z]-IMGY0;
+      int x0 = floorf(thisx/xgrid)+PAD_SIZE;
+      double xfrac = thisx/xgrid-x0+PAD_SIZE;
+      int y0 = floorf(thisy/ygrid)+PAD_SIZE;
+      double yfrac = thisy/ygrid-y0+PAD_SIZE;
+      int inx0 = IMG_PAD*y0+x0;
+      double2 g00 = img_orig[inx0];
+      double2 g01 = img_orig[inx0+IMG_PAD];
+      double2 g10 = img_orig[inx0+1];
+      double2 g11 = img_orig[inx0+IMG_PAD+1];
+      img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
+      img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
+      //img_out[z].x = 7.77777;
+     
+}
+
 
 int main(void) {
    double x[SIZE], y[SIZE], phi[SIZE], theta[SIZE];
@@ -843,4 +873,68 @@ int main(void) {
           abs(y3[z]-y2[z]) > 0.00001 ) std::cout << "Bad result at (z=" << z <<"): " << x3[z] << ", "<<y3[z] << " != " << x2[z] << ", " << y2[z] << std::endl;
    }
    std::cout << "(" << xmin << ", " << ymin << ") -- (" << xmax << ", " << ymax << ")" << std::endl;
+
+   /*** Interpolation on CPU ***/
+   double2* img_orig;
+   double2* img_out;
+   double2* img_out2;
+   img_orig = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   img_out = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   img_out2 = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   double2 *dimg_orig, *dimg_out;
+   for (int z=0;z<IMG_SIZE*IMG_SIZE;z++) {
+      img_orig[z].x = (rand()*1.0)/RAND_MAX;
+      img_orig[z].y = (rand()*1.0)/RAND_MAX;
+   }
+
+#if 1
+   double xgrid = (IMGX1-IMGX0)/IMG_SIZE;
+   double ygrid = (IMGY1-IMGY0)/IMG_SIZE;
+   for (int z=0;z<SIZE;z++) {
+      double thisx = x3[z]-IMGX0;
+      double thisy = y3[z]-IMGY0;
+      int x0 = floorf(thisx/xgrid)+PAD_SIZE;
+      double xfrac = thisx/xgrid-x0+PAD_SIZE;
+      int y0 = floorf(thisy/ygrid)+PAD_SIZE;
+      double yfrac = thisy/ygrid-y0+PAD_SIZE;
+      int inx0 = IMG_PAD*y0+x0;
+      double2 g00 = img_orig[inx0];
+      double2 g01 = img_orig[inx0+IMG_PAD];
+      double2 g10 = img_orig[inx0+1];
+      double2 g11 = img_orig[inx0+IMG_PAD+1];
+      img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
+      img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
+   }
+
+   cudaMalloc(&dimg_orig, sizeof(double2)*IMG_SIZE*IMG_SIZE);
+   cudaMalloc(&dimg_out, sizeof(double2)*IMG_SIZE*IMG_SIZE);
+   cudaMemcpy(dimg_orig, img_orig, sizeof(double2)*IMG_SIZE*IMG_SIZE, cudaMemcpyHostToDevice);
+   checkCudaError(__LINE__,__FILE__);
+   interp_kernel<<<(SIZE+1024-1)/1024,1024>>>(dx,dy,dimg_orig,SIZE,xgrid,ygrid,dimg_out);
+   checkCudaError(__LINE__,__FILE__);
+   cudaMemcpy(img_out2, dimg_out, sizeof(double2)*IMG_SIZE*IMG_SIZE, cudaMemcpyDeviceToHost);
+   checkCudaError(__LINE__,__FILE__);
+
+   std::cout << "Check results for interpolation..." << std::endl;
+
+   for (int z=0;z<SIZE;z++) {
+      if (fabs(img_out2[z].x-img_out[z].x) > 0.00001 ||
+          fabs(img_out2[z].y-img_out[z].y) > 0.00001  ) {
+         std::cout << "Mismatch for z = " << z << ": " << img_out2[z].x << ", " <<img_out2[z].y << " != "
+                   << img_out[z].x << ", " << img_out[z].y << std::endl;
+      }
+   }
+#endif
+   free(img_orig);
+   free(img_out);
+   free(img_out2);
+
+   cudaFree(dx);
+   cudaFree(dy);
+   cudaFree(dphi);
+   cudaFree(dtheta);
+   cudaFree(dstat);
+   cudaFree(dimg_orig);
+   cudaFree(dimg_out);
+   
 }
