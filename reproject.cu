@@ -9,7 +9,7 @@
 
 #define SIN 1
 
-#define SIZEX 100
+#define SIZEX 343
 #define SIZEY 100
 #define SIZE (SIZEX*SIZEY)
 
@@ -21,13 +21,13 @@
 #define R2D (180/3.1415926)
 #define D2R (3.1415926/180)
 
-#define PAD_SIZE 1
+#define PAD_SIZE 2
 #define IMG_SIZE 4096
 #define IMG_PAD (IMG_SIZE+2*PAD_SIZE)
 #define IMGX0 0.0
-#define IMGX1 0.4
-#define IMGY0 -0.4
-#define IMGY1 0.0
+#define IMGX1 0.5
+#define IMGY0 -0.5
+#define IMGY1 0.7
 
 
 void checkCudaError(int line, const char* filename) {
@@ -735,10 +735,10 @@ int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, dou
 
   return status;
 }
-__global__ void interp_kernel(const double* x3, const double* y3, const double2* img_orig, int sz, 
+__global__ void interp_kernel(const double* x3, const double* y3, double2* img_orig, int sz, 
                               double xgrid, double ygrid, double2* img_out) {
       int z = threadIdx.x + blockIdx.x * blockDim.x;
-      if (z>sz) return;
+      if (z>=sz) return;
       double thisx = x3[z]-IMGX0;
       double thisy = y3[z]-IMGY0;
       int x0 = floorf(thisx/xgrid)+PAD_SIZE;
@@ -746,25 +746,39 @@ __global__ void interp_kernel(const double* x3, const double* y3, const double2*
       int y0 = floorf(thisy/ygrid)+PAD_SIZE;
       double yfrac = thisy/ygrid-y0+PAD_SIZE;
       int inx0 = IMG_PAD*y0+x0;
-      double2 g00 = img_orig[inx0];
-      double2 g01 = img_orig[inx0+IMG_PAD];
-      double2 g10 = img_orig[inx0+1];
-      double2 g11 = img_orig[inx0+IMG_PAD+1];
-      img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
-      img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
-      //img_out[z].x = 7.77777;
+      inx0 %= IMG_PAD*IMG_PAD;
+      double out_x = img_orig[inx0].x;
+      double out_y = img_orig[inx0].y;
+      out_x *= (1-xfrac)*(1-yfrac);
+      out_y *= (1-xfrac)*(1-yfrac);
+      out_x += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].x;
+      out_y += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].y;
+      out_x += xfrac*(1-yfrac)*img_orig[inx0+1].x;
+      out_y += xfrac*(1-yfrac)*img_orig[inx0+1].y;
+      out_x += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].x;
+      out_y += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].y;
+      img_out[z].x = out_x;
+      img_out[z].y = out_y;
+      //img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
+      //img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
      
 }
 
 
 int main(void) {
-   double x[SIZE], y[SIZE], phi[SIZE], theta[SIZE];
-   double x2[SIZE], y2[SIZE], phi2[SIZE], theta2[SIZE];
-   double x3[SIZE], y3[SIZE];
+   double *x, *y, *phi, *theta, *x2, *y2;
 
-   int stat[SIZE];
+   int *stat;
 
    struct prjprm prj;
+
+   x = (double*)malloc(sizeof(double)*SIZE);
+   y = (double*)malloc(sizeof(double)*SIZE);
+   x2 = (double*)malloc(sizeof(double)*SIZE);
+   y2 = (double*)malloc(sizeof(double)*SIZE);
+   phi = (double*)malloc(sizeof(double)*SIZE);
+   theta = (double*)malloc(sizeof(double)*SIZE);
+   stat = (int*)malloc(sizeof(int)*SIZE);
 
    /***   Initialize ***/
    srand(2541617);
@@ -787,34 +801,53 @@ int main(void) {
       y[z] = YLL + (z/SIZEX)*(YUR/SIZEY);
    }
 
+   double2* img_orig;
+   double2* img_out;
+   double2* img_out2;
+   img_orig = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   img_out = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   img_out2 = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   if (!img_orig || !img_out || !img_out2) std::cerr << "ERROR. Failed CPU alloc." <<std::endl;
+   for (int z=0;z<IMG_PAD*IMG_PAD;z++) {
+      img_orig[z].x = (rand()*1.0)/RAND_MAX;
+      img_orig[z].y = (rand()*1.0)/RAND_MAX;
+   }
+
    /*** Execute x2s two ways ***/
    if (sinx2s(&prj, SIZEX, SIZEY, 1, 1, x, y, phi, theta, stat)) 
                         std::cout << "ERROR in sinx2s" << std::endl;
-
-   if (sinx2s_alt(&prj, SIZEX, SIZEY, 1, 1, x, y, phi2, theta2, stat)) 
-                        std::cout << "ERROR in sinx2s_alt" << std::endl;
-
-   /*** Make sure they match ***/
-   std::cout << "Checking x2s results..." << std::endl;
-   for (int z=0;z<SIZE;z++) {
-      if (abs(phi[z]-phi2[z]) > 0.00001 ||
-          abs(theta[z]-theta2[z]) > 0.00001 ) std::cout << "Error at (z=" << z <<"): " << phi[z] << ", "<<theta[z] << " != " << phi2[z] << ", " << theta2[z] << std::endl;
-   }
 
    /*** Execute s2x two ways ***/
    if (sins2x(&prj, SIZEX, SIZEY, 1, 1, phi, theta, x2, y2, stat)) 
                         std::cout << "ERROR in sins2x" << std::endl;
 
-   if (sins2x_alt(&prj, SIZEX, SIZEY, 1, 1, phi, theta, x3, y3, stat)) 
-                        std::cout << "ERROR in sins2x" << std::endl;
-
-   /*** Make sure they match ***/
-   std::cout << "Checking s2x results..." << std::endl;
+   double xmin, xmax, ymin, ymax;
+   xmin = ymin = 100000000;
+   xmax = ymax = -100000000;
    for (int z=0;z<SIZE;z++) {
-      if (abs(x3[z]-x2[z]) > 0.00001 ||
-          abs(y3[z]-y2[z]) > 0.00001 ) std::cout << "Error at (z=" << z <<"): " << x3[z] << ", "<<y3[z] << " != " << x2[z] << ", " << y2[z] << std::endl;
+      if (x2[z]<xmin) xmin = x2[z]; 
+      if (y2[z]<ymin) ymin = y2[z]; 
+      if (x2[z]>xmax) xmax = x2[z]; 
+      if (y2[z]>ymax) ymax = y2[z]; 
    }
-
+   std::cout << xmin << ", " << ymin << " -- " << xmax << ", " << ymax << std::endl;
+   double xgrid = (IMGX1-IMGX0)/IMG_SIZE*1.05;
+   double ygrid = (IMGY1-IMGY0)/IMG_SIZE*1.05;
+   for (int z=0;z<SIZE;z++) {
+      double thisx = x2[z]-IMGX0;
+      double thisy = y2[z]-IMGY0;
+      int x0 = floorf(thisx/xgrid)+PAD_SIZE;
+      double xfrac = thisx/xgrid-x0+PAD_SIZE;
+      int y0 = floorf(thisy/ygrid)+PAD_SIZE;
+      double yfrac = thisy/ygrid-y0+PAD_SIZE;
+      int inx0 = IMG_PAD*y0+x0;
+      double2 g00 = img_orig[inx0];
+      double2 g01 = img_orig[inx0+IMG_PAD];
+      double2 g10 = img_orig[inx0+1];
+      double2 g11 = img_orig[inx0+IMG_PAD+1];
+      img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
+      img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
+   }
    /*** GPU memory ***/
    double *dx, *dy, *dphi, *dtheta;
    int *dstat;
@@ -834,9 +867,12 @@ int main(void) {
                                           SIZEX, SIZEY, 1, 1, dx, dy, dphi, dtheta, dstat);
    checkCudaError(__LINE__,__FILE__);
 
+#if 0
    /*** Make sure results match ***/
-   cudaMemcpy(phi, dphi, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
-   cudaMemcpy(theta, dtheta, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
+   double* phi2 = (double*)malloc(sizeof(double)*SIZE);
+   double* theta2 = (double*)malloc(sizeof(double)*SIZE);
+   cudaMemcpy(phi2, dphi, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
+   cudaMemcpy(theta2, dtheta, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
    cudaMemcpy(stat, dstat, sizeof(int)*SIZE, cudaMemcpyDeviceToHost);
 
    checkCudaError(__LINE__,__FILE__);
@@ -846,6 +882,9 @@ int main(void) {
       if (abs(phi[z]-phi2[z]) > 0.00001 ||
           abs(theta[z]-theta2[z]) > 0.00001 ) std::cout << "Bad result at (z=" << z <<"): " << phi[z] << ", "<<theta[z] << " != " << phi2[z] << ", " << theta2[z] << std::endl;
    }
+   free(phi2);
+   free(theta2);
+#endif
 
    /*** Execute s2x on GPU ***/
    sins2x_kernel<<<dim3(1,SIZEY),SIZEX>>>(prj.r0, prj.w[1], prj.x0, prj.y0,
@@ -853,7 +892,10 @@ int main(void) {
                                           SIZEX, SIZEY, 1, 1, dphi, dtheta, dx, dy, dstat);
    checkCudaError(__LINE__,__FILE__);
 
+#if 0
    /*** Make sure results match ***/
+   double* x3 = (double*)malloc(sizeof(double)*SIZE);
+   double* y3 = (double*)malloc(sizeof(double)*SIZE);
    cudaMemcpy(x3, dx, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
    cudaMemcpy(y3, dy, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
    cudaMemcpy(stat, dstat, sizeof(int)*SIZE, cudaMemcpyDeviceToHost);
@@ -865,66 +907,47 @@ int main(void) {
    xmax = ymax = -100000000;
    for (int z=0;z<SIZE;z++) {
       
-      if (x3[z]<xmin) xmin = x3[z];
-      if (y3[z]<ymin) ymin = y3[z];
-      if (x3[z]>xmax) xmax = x3[z];
-      if (y3[z]>ymax) ymax = y3[z];
+      if (x2[z]<xmin) xmin = x2[z];
+      if (y2[z]<ymin) ymin = y2[z];
+      if (x2[z]>xmax) xmax = x2[z];
+      if (y2[z]>ymax) ymax = y2[z];
       if (abs(x3[z]-x2[z]) > 0.00001 ||
           abs(y3[z]-y2[z]) > 0.00001 ) std::cout << "Bad result at (z=" << z <<"): " << x3[z] << ", "<<y3[z] << " != " << x2[z] << ", " << y2[z] << std::endl;
    }
    std::cout << "(" << xmin << ", " << ymin << ") -- (" << xmax << ", " << ymax << ")" << std::endl;
+   free(x3);
+   free(y3);
+#endif
 
    /*** Interpolation on CPU ***/
-   double2* img_orig;
-   double2* img_out;
-   double2* img_out2;
-   img_orig = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
-   img_out = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
-   img_out2 = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
    double2 *dimg_orig, *dimg_out;
-   for (int z=0;z<IMG_SIZE*IMG_SIZE;z++) {
-      img_orig[z].x = (rand()*1.0)/RAND_MAX;
-      img_orig[z].y = (rand()*1.0)/RAND_MAX;
-   }
-
-#if 1
-   double xgrid = (IMGX1-IMGX0)/IMG_SIZE;
-   double ygrid = (IMGY1-IMGY0)/IMG_SIZE;
-   for (int z=0;z<SIZE;z++) {
-      double thisx = x3[z]-IMGX0;
-      double thisy = y3[z]-IMGY0;
-      int x0 = floorf(thisx/xgrid)+PAD_SIZE;
-      double xfrac = thisx/xgrid-x0+PAD_SIZE;
-      int y0 = floorf(thisy/ygrid)+PAD_SIZE;
-      double yfrac = thisy/ygrid-y0+PAD_SIZE;
-      int inx0 = IMG_PAD*y0+x0;
-      double2 g00 = img_orig[inx0];
-      double2 g01 = img_orig[inx0+IMG_PAD];
-      double2 g10 = img_orig[inx0+1];
-      double2 g11 = img_orig[inx0+IMG_PAD+1];
-      img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
-      img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
-   }
-
-   cudaMalloc(&dimg_orig, sizeof(double2)*IMG_SIZE*IMG_SIZE);
-   cudaMalloc(&dimg_out, sizeof(double2)*IMG_SIZE*IMG_SIZE);
-   cudaMemcpy(dimg_orig, img_orig, sizeof(double2)*IMG_SIZE*IMG_SIZE, cudaMemcpyHostToDevice);
+   cudaMalloc(&dimg_orig, sizeof(double2)*IMG_PAD*IMG_PAD);
+   cudaMalloc(&dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD);
+   if (!dimg_orig || !dimg_out) std::cerr << "ERROR: Failed GPU allocation." << std::endl;
    checkCudaError(__LINE__,__FILE__);
-   interp_kernel<<<(SIZE+1024-1)/1024,1024>>>(dx,dy,dimg_orig,SIZE,xgrid,ygrid,dimg_out);
+   cudaMemcpy(dimg_orig, img_orig, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyHostToDevice);
    checkCudaError(__LINE__,__FILE__);
-   cudaMemcpy(img_out2, dimg_out, sizeof(double2)*IMG_SIZE*IMG_SIZE, cudaMemcpyDeviceToHost);
+   interp_kernel<<<(SIZE+1024-1)/1024,1024>>>(dx,dy,dimg_orig,IMG_SIZE*IMG_SIZE,xgrid,ygrid,dimg_out);
+   checkCudaError(__LINE__,__FILE__);
+   cudaMemcpy(img_out2, dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyDeviceToHost);
    checkCudaError(__LINE__,__FILE__);
 
-   std::cout << "Check results for interpolation..." << std::endl;
+   std::cout << "Check results against CPU..." << std::endl;
 
-   for (int z=0;z<SIZE;z++) {
+   for (int z=0;z<SIZE;z+=1000) {
       if (fabs(img_out2[z].x-img_out[z].x) > 0.00001 ||
           fabs(img_out2[z].y-img_out[z].y) > 0.00001  ) {
          std::cout << "Mismatch for z = " << z << ": " << img_out2[z].x << ", " <<img_out2[z].y << " != "
                    << img_out[z].x << ", " << img_out[z].y << std::endl;
       }
    }
-#endif
+   free(x);
+   free(y);
+   free(x2);
+   free(y2);
+   free(phi);
+   free(theta);
+   free(stat);
    free(img_orig);
    free(img_out);
    free(img_out2);
@@ -936,5 +959,6 @@ int main(void) {
    cudaFree(dstat);
    cudaFree(dimg_orig);
    cudaFree(dimg_out);
+
    
 }
