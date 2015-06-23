@@ -24,10 +24,10 @@
 #define PAD_SIZE 2
 #define IMG_SIZE 4096
 #define IMG_PAD (IMG_SIZE+2*PAD_SIZE)
-#define IMGX0 0.0
-#define IMGX1 0.5
-#define IMGY0 -0.5
-#define IMGY1 0.7
+#define IMGX0 0.1
+#define IMGX1 0.3
+#define IMGY0 -0.3
+#define IMGY1 0.1
 
 
 void checkCudaError(int line, const char* filename) {
@@ -49,14 +49,6 @@ void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale,
                 double aoff, double boff, double coff, int nx, int ny, 
                 int sxy, int spt, double *x, double *y, double *phi, 
                 double *theta, int *stat);
-
-__global__ void sinx2s_kernel(double xi, double eta, double xoff, double yoff, double scale,
-                double aoff, double boff, double coff, int nx, int ny, int sxy, 
-                int spt, double *x, double *y, double *phi, double *theta, 
-                int *stat)                                                 {
-  sinx2s_dev(xi, eta, xoff, yoff, scale, aoff, boff, coff, nx, ny, sxy, spt, 
-             x, y, phi, theta, stat);
-}
 __device__
 void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale, 
                 double aoff, double boff, double coff, int nx, int ny, 
@@ -466,12 +458,6 @@ void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
                double costheta0, int bounds, int nphi, int ntheta, int spt, 
                int sxy, double *phi, double *theta, double *x, double *y, int *stat);
 
-__global__ void sins2x_kernel(double r0, double scale, double x0, double y0, double sintheta0,
-               double costheta0, int bounds, int nphi, int ntheta, int spt, 
-               int sxy, double *phi, double *theta, double *x, double *y, int *stat) {
-  sins2x_dev(r0, scale, x0, y0, sintheta0, costheta0, bounds, nphi, ntheta, sxy, spt, 
-             phi, theta, x, y, stat);
-}
 __device__
 void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
                double costheta0, int bounds, int nphi, int ntheta, int spt, 
@@ -735,9 +721,23 @@ int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, dou
 
   return status;
 }
-__global__ void interp_kernel(const double* x3, const double* y3, double2* img_orig, int sz, 
+__global__ void sinx2s_kernel(double xi, double eta, double xoff, double yoff, double scale,
+                double aoff, double boff, double coff, int nx, int ny, int sxy, 
+                int spt, double *x, double *y, double *phi, double *theta, 
+                int *stat)                                                 {
+  sinx2s_dev(xi, eta, xoff, yoff, scale, aoff, boff, coff, nx, ny, sxy, spt, 
+             x, y, phi, theta, stat);
+}
+__global__ void sins2x_kernel(double r0, double scale, double x0, double y0, double sintheta0,
+               double costheta0, int bounds, int nphi, int ntheta, int spt, 
+               int sxy, double *phi, double *theta, double *x, double *y, int *stat) {
+  sins2x_dev(r0, scale, x0, y0, sintheta0, costheta0, bounds, nphi, ntheta, sxy, spt, 
+             phi, theta, x, y, stat);
+}
+__device__ void interp_dev(const double* x3, const double* y3, double2* img_orig, int sz, 
                               double xgrid, double ygrid, double2* img_out) {
       int z = threadIdx.x + blockIdx.x * blockDim.x;
+      z += blockDim.x*gridDim.x*(threadIdx.y + blockIdx.y*blockDim.y); 
       if (z>=sz) return;
       double thisx = x3[z]-IMGX0;
       double thisy = y3[z]-IMGY0;
@@ -762,6 +762,22 @@ __global__ void interp_kernel(const double* x3, const double* y3, double2* img_o
       //img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
       //img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
      
+}
+__global__ void interp_kernel(const double* x3, const double* y3, double2* img_orig, int sz, 
+                              double xgrid, double ygrid, double2* img_out) {
+  interp_dev(x3, y3, img_orig, sz, xgrid, ygrid, img_out);
+}
+__global__ void coord_convert(double xi, double eta, double xoff, double yoff, double scale_in,
+               double aoff, double boff, double coff, int nx, int ny, 
+               double r0, double scale_out, double x0, double y0, double sintheta0,
+               double costheta0, int bounds, int nphi, int ntheta, 
+               int sxy, int spt, double *x, double *y, double *phi, double *theta, 
+               double2* img_orig, int sz, double xgrid, double ygrid, double2* img_out, int *stat) {
+  sinx2s_dev(xi, eta, xoff, yoff, scale_in, aoff, boff, coff, nx, ny, sxy, spt, 
+             x, y, phi, theta, stat);
+  sins2x_dev(r0, scale_out, x0, y0, sintheta0, costheta0, bounds, nphi, ntheta, sxy, spt, 
+             phi, theta, x, y, stat);
+  interp_dev(x, y, img_orig, sz, xgrid, ygrid, img_out);
 }
 
 
@@ -831,8 +847,8 @@ int main(void) {
       if (y2[z]>ymax) ymax = y2[z]; 
    }
    std::cout << xmin << ", " << ymin << " -- " << xmax << ", " << ymax << std::endl;
-   double xgrid = (IMGX1-IMGX0)/IMG_SIZE*1.05;
-   double ygrid = (IMGY1-IMGY0)/IMG_SIZE*1.05;
+   double xgrid = (IMGX1-IMGX0)/IMG_SIZE;
+   double ygrid = (IMGY1-IMGY0)/IMG_SIZE;
    for (int z=0;z<SIZE;z++) {
       double thisx = x2[z]-IMGX0;
       double thisy = y2[z]-IMGY0;
@@ -848,10 +864,17 @@ int main(void) {
       img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
       img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
    }
+
    /*** GPU memory ***/
+   double2 *dimg_orig, *dimg_out;
+   cudaMalloc(&dimg_orig, sizeof(double2)*IMG_PAD*IMG_PAD);
+   cudaMalloc(&dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD);
+   if (!dimg_orig || !dimg_out) std::cerr << "ERROR: Failed GPU allocation." << std::endl;
+   cudaMemcpy(dimg_orig, img_orig, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyHostToDevice);
+   checkCudaError(__LINE__,__FILE__);
+
    double *dx, *dy, *dphi, *dtheta;
    int *dstat;
-
    cudaMalloc(&dx, sizeof(double)*SIZE);
    cudaMalloc(&dy, sizeof(double)*SIZE);
    cudaMalloc(&dphi, sizeof(double)*SIZE);
@@ -860,74 +883,14 @@ int main(void) {
    
    cudaMemcpy(dx, x, sizeof(double)*SIZE, cudaMemcpyHostToDevice);
    cudaMemcpy(dy, y, sizeof(double)*SIZE, cudaMemcpyHostToDevice);
-
-   /*** Execute x2s on GPU ***/
-   sinx2s_kernel<<<dim3(1,SIZEY),SIZEX>>>(prj.pv[1], prj.pv[2], prj.x0, prj.y0,
-                                          prj.w[0], prj.w[2], -prj.w[1], prj.w[3],
-                                          SIZEX, SIZEY, 1, 1, dx, dy, dphi, dtheta, dstat);
    checkCudaError(__LINE__,__FILE__);
 
-#if 0
-   /*** Make sure results match ***/
-   double* phi2 = (double*)malloc(sizeof(double)*SIZE);
-   double* theta2 = (double*)malloc(sizeof(double)*SIZE);
-   cudaMemcpy(phi2, dphi, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
-   cudaMemcpy(theta2, dtheta, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
-   cudaMemcpy(stat, dstat, sizeof(int)*SIZE, cudaMemcpyDeviceToHost);
-
-   checkCudaError(__LINE__,__FILE__);
-
-   std::cout << "Checking x2s (GPU) results..." << std::endl;
-   for (int z=0;z<SIZE;z++) {
-      if (abs(phi[z]-phi2[z]) > 0.00001 ||
-          abs(theta[z]-theta2[z]) > 0.00001 ) std::cout << "Bad result at (z=" << z <<"): " << phi[z] << ", "<<theta[z] << " != " << phi2[z] << ", " << theta2[z] << std::endl;
-   }
-   free(phi2);
-   free(theta2);
-#endif
-
-   /*** Execute s2x on GPU ***/
-   sins2x_kernel<<<dim3(1,SIZEY),SIZEX>>>(prj.r0, prj.w[1], prj.x0, prj.y0,
-                                          prj.pv[1], prj.pv[2], prj.bounds,
-                                          SIZEX, SIZEY, 1, 1, dphi, dtheta, dx, dy, dstat);
-   checkCudaError(__LINE__,__FILE__);
-
-#if 0
-   /*** Make sure results match ***/
-   double* x3 = (double*)malloc(sizeof(double)*SIZE);
-   double* y3 = (double*)malloc(sizeof(double)*SIZE);
-   cudaMemcpy(x3, dx, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
-   cudaMemcpy(y3, dy, sizeof(double)*SIZE, cudaMemcpyDeviceToHost);
-   cudaMemcpy(stat, dstat, sizeof(int)*SIZE, cudaMemcpyDeviceToHost);
-   checkCudaError(__LINE__,__FILE__);
-
-   std::cout << "Checking s2x (GPU) results..." << std::endl;
-   double xmin, xmax, ymin, ymax;
-   xmin = ymin = 100000000;
-   xmax = ymax = -100000000;
-   for (int z=0;z<SIZE;z++) {
-      
-      if (x2[z]<xmin) xmin = x2[z];
-      if (y2[z]<ymin) ymin = y2[z];
-      if (x2[z]>xmax) xmax = x2[z];
-      if (y2[z]>ymax) ymax = y2[z];
-      if (abs(x3[z]-x2[z]) > 0.00001 ||
-          abs(y3[z]-y2[z]) > 0.00001 ) std::cout << "Bad result at (z=" << z <<"): " << x3[z] << ", "<<y3[z] << " != " << x2[z] << ", " << y2[z] << std::endl;
-   }
-   std::cout << "(" << xmin << ", " << ymin << ") -- (" << xmax << ", " << ymax << ")" << std::endl;
-   free(x3);
-   free(y3);
-#endif
-
-   /*** Interpolation on CPU ***/
-   double2 *dimg_orig, *dimg_out;
-   cudaMalloc(&dimg_orig, sizeof(double2)*IMG_PAD*IMG_PAD);
-   cudaMalloc(&dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD);
-   if (!dimg_orig || !dimg_out) std::cerr << "ERROR: Failed GPU allocation." << std::endl;
-   checkCudaError(__LINE__,__FILE__);
-   cudaMemcpy(dimg_orig, img_orig, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyHostToDevice);
-   checkCudaError(__LINE__,__FILE__);
-   interp_kernel<<<(SIZE+1024-1)/1024,1024>>>(dx,dy,dimg_orig,IMG_SIZE*IMG_SIZE,xgrid,ygrid,dimg_out);
+   /*** Compute on GPU ***/
+   coord_convert<<<dim3(1,SIZEY),SIZEX>>>(prj.pv[1], prj.pv[2], prj.x0, prj.y0, prj.w[0], 
+                     prj.w[2], -prj.w[1], prj.w[3], SIZEX, SIZEY, prj.r0, prj.w[1], 
+                     prj.x0, prj.y0, prj.pv[1], prj.pv[2], prj.bounds, SIZEX, SIZEY, 
+                     1, 1, dx, dy, dphi, dtheta, dimg_orig, IMG_SIZE*IMG_SIZE, xgrid, ygrid,
+                     dimg_out, dstat);
    checkCudaError(__LINE__,__FILE__);
    cudaMemcpy(img_out2, dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyDeviceToHost);
    checkCudaError(__LINE__,__FILE__);
