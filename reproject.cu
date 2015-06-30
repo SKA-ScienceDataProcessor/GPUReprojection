@@ -9,8 +9,8 @@
 
 #define SIN 1
 
-#define SIZEX 343
-#define SIZEY 100
+#define SIZEX 4096
+#define SIZEY 4096
 #define SIZE (SIZEX*SIZEY)
 
 #define XLL 0.45
@@ -24,10 +24,10 @@
 #define PAD_SIZE 2
 #define IMG_SIZE 4096
 #define IMG_PAD (IMG_SIZE+2*PAD_SIZE)
-#define IMGX0 0.1
-#define IMGX1 0.3
-#define IMGY0 -0.3
-#define IMGY1 0.1
+#define IMGX0 0.0
+#define IMGX1 0.4
+#define IMGY0 -0.4
+#define IMGY1 0.0
 
 
 void checkCudaError(int line, const char* filename) {
@@ -44,134 +44,6 @@ struct prjprm {
    int bounds;
 };
 
-__device__
-void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale, 
-                double aoff, double boff, double coff, int nx, int ny, 
-                int sxy, int spt, double *x, double *y, double *phi, 
-                double *theta, int *stat);
-__device__
-void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale, 
-                double aoff, double boff, double coff, int nx, int ny, 
-                int sxy, int spt, double *x, double *y, double *phi, 
-                double *theta, int *stat)
-{
-  int mx, my, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
-         y1, z;
-  int ix, iy;
-
-
-  //TODO What's this?
-  if (ny > 0) {
-    mx = nx;
-    my = ny;
-  } else {
-    mx = 1;
-    my = 1;
-    ny = nx;
-  }
-
-  status = 0;
-
-
-  /* Do x dependence. */
-
-  /* Do y dependence. */
-  iy=threadIdx.y + blockIdx.y * blockDim.y;
-  ix=threadIdx.x + blockIdx.x * blockDim.x;
-  if (ix>mx || iy>my) return;
-    y0 = (y[sxy*iy] + yoff)*scale;
-    y02 = y0*y0;
-
-      /* Compute intermediaries. */
-      x0 = (x[sxy*ix] + xoff)*scale;
-      r2 = x0*x0 + y02;
-
-      if (boff == 0.0) {
-        /* Orthographic projection. */
-        if (r2 != 0.0) {
-          phi[ix*spt+mx*iy*spt] = atan2(x0, -y0);
-        } else {
-          phi[ix*spt+mx*iy*spt] = 0.0;
-        }
-
-        if (r2 < 0.5) {
-          theta[ix*spt+mx*iy*spt] = acos(sqrt(r2));
-        } else if (r2 <= 1.0) {
-          theta[ix*spt+mx*iy*spt] = asin(sqrt(1.0 - r2));
-        } else {
-          stat[ix*spt+mx*iy*spt] = 1;
-          if (!status) status = PRJERR_BAD_PIX_SET_SIN;
-          return;
-        }
-
-      } else {
-        /* "Synthesis" projection. */
-        xy = x0*xi + y0*eta;
-
-        if (r2 < 1.0e-10) {
-          /* Use small angle formula. */
-          z = r2/2.0;
-          theta[ix*spt+mx*iy*spt] = 90.0 - R2D*sqrt(r2/(1.0 + xy));
-
-        } else {
-          a = aoff;
-          b = xy + boff;
-          c = r2 - xy - xy + coff;
-          d = b*b - a*c;
-
-          /* Check for a solution. */
-          if (d < 0.0) {
-            phi[ix*spt+mx*iy*spt] = 0.0;
-            theta[ix*spt+mx*iy*spt] = 0.0;
-            stat[ix*spt+mx*iy*spt] = 1;
-            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
-            return;
-          }
-          d = sqrt(d);
-
-          /* Choose solution closest to pole. */
-          sinth1 = (-b + d)/a;
-          sinth2 = (-b - d)/a;
-          sinthe = (sinth1 > sinth2) ? sinth1 : sinth2;
-          if (sinthe > 1.0) {
-            if (sinthe-1.0 < tol) {
-              sinthe = 1.0;
-            } else {
-              sinthe = (sinth1 < sinth2) ? sinth1 : sinth2;
-            }
-          }
-
-          if (sinthe < -1.0) {
-            if (sinthe+1.0 > -tol) {
-              sinthe = -1.0;
-            }
-          }
-
-          if (sinthe > 1.0 || sinthe < -1.0) {
-            phi[ix*spt+mx*iy*spt] = 0.0;
-            theta[ix*spt+mx*iy*spt] = 0.0;
-            stat[ix*spt+mx*iy*spt] = 1;
-            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
-            return;
-          }
-
-          theta[ix*spt+mx*iy*spt] = 0.0;
-           asin(sinthe);
-          z = 1.0 - sinthe;
-        }
-
-        x1 = -y0 + eta*z;
-        y1 =  x0 -  xi*z;
-        if (x1 == 0.0 && y1 == 0.0) {
-          phi[ix*spt+mx*iy*spt] = 0.0;
-        } else {
-          phi[ix*spt+mx*iy*spt] = atan2(y1,x1);
-        }
-      }
-   return;
-}
 //__device__
 int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, double *x, double *y, double *phi, double *theta, int *stat)
 {
@@ -453,95 +325,6 @@ int sinx2s(struct prjprm *prj, int nx, int ny, int sxy, int spt, double *x, doub
 }
 
 /*--------------------------------------------------------------------------*/
-__device__
-void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
-               double costheta0, int bounds, int nphi, int ntheta, int spt, 
-               int sxy, double *phi, double *theta, double *x, double *y, int *stat);
-
-__device__
-void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
-               double costheta0, int bounds, int nphi, int ntheta, int spt, 
-               int sxy, double *phi, double *theta, double *x, double *y, int *stat)
-
-{
-  int mphi, mtheta, status;
-  double cosphi, costhe, sinphi, r, t, z, z1, z2;
-  register int iphi, itheta, istat;
-
-
-  if (ntheta > 0) {
-    mphi   = nphi;
-    mtheta = ntheta;
-  } else {
-    mphi   = 1;
-    mtheta = 1;
-    ntheta = nphi;
-  }
-
-  status = 0;
-
-  /* Do theta dependence. */
-  itheta = threadIdx.y + blockIdx.y * blockDim.y;
-  iphi = threadIdx.x + blockIdx.x * blockDim.x;
-  if (iphi>mphi || itheta>mtheta) return;
-  //for (itheta = 0; itheta < ntheta; itheta++) {
-    t = (90.0 - fabs(theta[itheta*spt]))*D2R;
-    if (t < 1.0e-5) {
-      if (theta[itheta*spt] > 0.0) {
-         z = t*t/2.0;
-      } else {
-         z = 2.0 - t*t/2.0;
-      }
-      costhe = t;
-    } else {
-      z = 1.0 - sin(theta[itheta*spt]);
-      costhe = cos(theta[itheta*spt]);
-    }
-    r = r0*costhe;
-
-    if (scale == 0.0) {
-      /* Orthographic projection. */
-      istat = 0;
-      if (bounds&1) {
-        if (theta[itheta*spt] < 0.0) {
-          istat = 1;
-          if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
-        }
-      }
-
-      //for (iphi = 0; iphi < mphi; iphi++, xp += sxy, yp += sxy) {
-        sincos(phi[iphi*sxy], &sinphi, &cosphi); 
-        x[iphi*sxy+mphi*sxy*itheta] =  r*sinphi - x0;
-        y[iphi*sxy+mphi*sxy*itheta] =  -r*cosphi - y0;
-        stat[iphi*sxy+mphi*sxy*itheta] = istat;
-      //}
-
-    } else {
-      /* "Synthesis" projection. */
-      z *= r0;
-      z1 = sintheta0*z - x0;
-      z2 = costheta0*z - y0;
-
-      //for (iphi = 0; iphi < mphi; iphi++) {
-        istat = 0;
-        sincos(phi[iphi*sxy], &sinphi, &cosphi); 
-        if (bounds&1) {
-          t = -atan(sintheta0*(sinphi) - costheta0*(cosphi));
-          if (theta[itheta*spt] < t) {
-            istat = 1;
-            if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
-          }
-        }
-
-        x[iphi*sxy+mphi*sxy*itheta] = r*sinphi + z1;
-        y[iphi*sxy+mphi*sxy*itheta] = -r*cosphi + z2;
-        stat[iphi*sxy+mphi*sxy*itheta] = istat;
-      //}
-    }
-  //}
-
-  //return status;
-}
 int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, double *theta, double *x, double *y, int *stat)
 
 {
@@ -606,6 +389,81 @@ int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi,
         if (prj->bounds&1) {
           t = -atan(prj->pv[1]*(sinphi) - prj->pv[2]*(cosphi));
           if (theta[itheta*spt] < t) {
+            istat = 1;
+            if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+          }
+        }
+
+        x[iphi*sxy+mphi*sxy*itheta] = r*sinphi + z1;
+        y[iphi*sxy+mphi*sxy*itheta] = -r*cosphi + z2;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      }
+    }
+  }
+
+  return status;
+}
+int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, double *theta, double *x, double *y, int *stat)
+
+{
+  int mphi, mtheta, status;
+  double cosphi, costhe, sinphi, r, t, z, z1, z2;
+  register int iphi, itheta, istat;
+
+
+  if (ntheta > 0) {
+    mphi   = nphi;
+    mtheta = ntheta;
+  } else {
+    mphi   = 1;
+    mtheta = 1;
+    ntheta = nphi;
+  }
+
+  status = 0;
+
+  /* Do theta dependence. */
+  for (itheta = 0; itheta < ntheta; itheta++) {
+  for (iphi = 0; iphi < mphi; iphi++) {
+    t = (90.0 - fabs(theta[iphi*spt+nphi*itheta*spt]))*D2R;
+    if (t < 1.0e-5) {
+      if (theta[iphi*spt+nphi*itheta*spt] > 0.0) {
+         z = t*t/2.0;
+      } else {
+         z = 2.0 - t*t/2.0;
+      }
+      costhe = t;
+    } else {
+      z = 1.0 - sin(theta[iphi*spt+nphi*itheta*spt]);
+      costhe = cos(theta[iphi*spt+nphi*itheta*spt]);
+    }
+    r = prj->r0*costhe;
+
+    if (prj->w[1] == 0.0) {
+      /* Orthographic projection. */
+      istat = 0;
+      if (prj->bounds&1) {
+        if (theta[iphi*sxy+nphi*itheta*sxy] < 0.0) {
+          istat = 1;
+          if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+        }
+      }
+
+        sincos(phi[iphi*sxy+nphi*itheta*sxy], &sinphi, &cosphi); 
+        x[iphi*sxy+mphi*sxy*itheta] =  r*sinphi - prj->x0;
+        y[iphi*sxy+mphi*sxy*itheta] =  -r*cosphi - prj->y0;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+    } else {
+      /* "Synthesis" projection. */
+      z *= prj->r0;
+      z1 = prj->pv[1]*z - prj->x0;
+      z2 = prj->pv[2]*z - prj->y0;
+
+        istat = 0;
+        sincos(phi[iphi*sxy+nphi*itheta*sxy], &sinphi, &cosphi); 
+        if (prj->bounds&1) {
+          t = -atan(prj->pv[1]*(sinphi) - prj->pv[2]*(cosphi));
+          if (theta[iphi*spt+nphi*itheta*spt] < t) {
             istat = 1;
             if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
           }
@@ -721,6 +579,780 @@ int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, dou
 
   return status;
 }
+__device__
+void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale, 
+                double aoff, double boff, double coff, int nx, int ny, 
+                int sxy, int spt, double *x, double *y, double *phi, 
+                double *theta, int *stat)
+{
+  int mx, my, status;
+  const double tol = 1.0e-13;
+  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+         y1, z;
+  int ix, iy;
+
+
+  mx = nx;
+  my = ny;
+
+  status = 0;
+
+
+  /* Do x dependence. */
+
+  /* Do y dependence. */
+  iy=threadIdx.y + blockIdx.y * blockDim.y;
+  ix=threadIdx.x + blockIdx.x * blockDim.x;
+  if (ix>mx || iy>my) return;
+    y0 = (y[sxy*iy] + yoff)*scale;
+    y02 = y0*y0;
+
+      /* Compute intermediaries. */
+      x0 = (x[sxy*ix] + xoff)*scale;
+      r2 = x0*x0 + y02;
+
+      if (boff == 0.0) {
+        /* Orthographic projection. */
+        if (r2 != 0.0) {
+          phi[ix*spt+mx*iy*spt] = atan2(x0, -y0);
+        } else {
+          phi[ix*spt+mx*iy*spt] = 0.0;
+        }
+
+        if (r2 < 0.5) {
+          theta[ix*spt+mx*iy*spt] = acos(sqrt(r2));
+        } else if (r2 <= 1.0) {
+          theta[ix*spt+mx*iy*spt] = asin(sqrt(1.0 - r2));
+        } else {
+          stat[ix*spt+mx*iy*spt] = 1;
+          if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+          return;
+        }
+
+      } else {
+        /* "Synthesis" projection. */
+        xy = x0*xi + y0*eta;
+
+        if (r2 < 1.0e-10) {
+          /* Use small angle formula. */
+          z = r2/2.0;
+          theta[ix*spt+mx*iy*spt] = 90.0 - R2D*sqrt(r2/(1.0 + xy));
+
+        } else {
+          a = aoff;
+          b = xy + boff;
+          c = r2 - xy - xy + coff;
+          d = b*b - a*c;
+
+          /* Check for a solution. */
+          if (d < 0.0) {
+            phi[ix*spt+mx*iy*spt] = 0.0;
+            theta[ix*spt+mx*iy*spt] = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+          d = sqrt(d);
+
+          /* Choose solution closest to pole. */
+          sinth1 = (-b + d)/a;
+          sinth2 = (-b - d)/a;
+          sinthe = (sinth1 > sinth2) ? sinth1 : sinth2;
+          if (sinthe > 1.0) {
+            if (sinthe-1.0 < tol) {
+              sinthe = 1.0;
+            } else {
+              sinthe = (sinth1 < sinth2) ? sinth1 : sinth2;
+            }
+          }
+
+          if (sinthe < -1.0) {
+            if (sinthe+1.0 > -tol) {
+              sinthe = -1.0;
+            }
+          }
+
+          if (sinthe > 1.0 || sinthe < -1.0) {
+            phi[ix*spt+mx*iy*spt] = 0.0;
+            theta[ix*spt+mx*iy*spt] = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+
+          theta[ix*spt+mx*iy*spt] = 0.0;
+           asin(sinthe);
+          z = 1.0 - sinthe;
+        }
+
+        x1 = -y0 + eta*z;
+        y1 =  x0 -  xi*z;
+        if (x1 == 0.0 && y1 == 0.0) {
+          phi[ix*spt+mx*iy*spt] = 0.0;
+        } else {
+          phi[ix*spt+mx*iy*spt] = atan2(y1,x1);
+        }
+      }
+   return;
+}
+__device__
+void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
+               double costheta0, int bounds, int nphi, int ntheta, int spt, 
+               int sxy, double *phi, double *theta, double *x, double *y, int *stat)
+
+{
+  int mphi, mtheta, status;
+  double cosphi, costhe, sinphi, r, t, z, z1, z2;
+  register int iphi, itheta, istat;
+
+
+  mphi   = nphi;
+  mtheta = ntheta;
+
+  status = 0;
+
+  /* Do theta dependence. */
+  itheta = threadIdx.y + blockIdx.y * blockDim.y;
+  iphi = threadIdx.x + blockIdx.x * blockDim.x;
+  if (iphi>mphi || itheta>mtheta) return;
+  //for (itheta = 0; itheta < ntheta; itheta++) {
+    t = (90.0 - fabs(theta[itheta*spt]))*D2R;
+    if (t < 1.0e-5) {
+      if (theta[itheta*spt] > 0.0) {
+         z = t*t/2.0;
+      } else {
+         z = 2.0 - t*t/2.0;
+      }
+      costhe = t;
+    } else {
+      z = 1.0 - sin(theta[itheta*spt]);
+      costhe = cos(theta[itheta*spt]);
+    }
+    r = r0*costhe;
+
+    if (scale == 0.0) {
+      /* Orthographic projection. */
+      istat = 0;
+      if (bounds&1) {
+        if (theta[itheta*spt] < 0.0) {
+          istat = 1;
+          if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+        }
+      }
+
+      //for (iphi = 0; iphi < mphi; iphi++, xp += sxy, yp += sxy) {
+        sincos(phi[iphi*sxy], &sinphi, &cosphi); 
+        x[iphi*sxy+mphi*sxy*itheta] =  r*sinphi - x0;
+        y[iphi*sxy+mphi*sxy*itheta] =  -r*cosphi - y0;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+
+    } else {
+      /* "Synthesis" projection. */
+      z *= r0;
+      z1 = sintheta0*z - x0;
+      z2 = costheta0*z - y0;
+
+      //for (iphi = 0; iphi < mphi; iphi++) {
+        istat = 0;
+        sincos(phi[iphi*sxy], &sinphi, &cosphi); 
+        if (bounds&1) {
+          t = -atan(sintheta0*(sinphi) - costheta0*(cosphi));
+          if (theta[itheta*spt] < t) {
+            istat = 1;
+            if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+          }
+        }
+
+        x[iphi*sxy+mphi*sxy*itheta] = r*sinphi + z1;
+        y[iphi*sxy+mphi*sxy*itheta] = -r*cosphi + z2;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+    }
+  //}
+
+  //return status;
+}
+__device__
+void cc_dev(double xi, double eta, double xoff, double yoff, double scale, 
+                double aoff, double boff, double coff, int nx, int ny, int nphi, int ntheta, 
+                int sxy, int spt, double r0, double scale_out, double xoff_out, double yoff_out,
+                double sintheta0, double costheta0, int bounds, double *x, double *y, int *stat,
+                double* phi, double* theta)
+{
+  int mx, my, status;
+  const double tol = 1.0e-13;
+  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+         y1, z;
+  int ix, iy;
+  double lphi, ltheta;
+
+
+  mx = nx;
+  my = ny;
+
+  status = 0;
+
+
+  /* Do x dependence. */
+
+  /* Do y dependence. */
+  iy=threadIdx.y + blockIdx.y * blockDim.y;
+  ix=threadIdx.x + blockIdx.x * blockDim.x;
+  if (ix>mx || iy>my) return;
+    y0 = (y[sxy*iy] + yoff)*scale;
+    y02 = y0*y0;
+
+      /* Compute intermediaries. */
+      x0 = (x[sxy*ix] + xoff)*scale;
+      r2 = x0*x0 + y02;
+
+      if (boff == 0.0) {
+        /* Orthographic projection. */
+        if (r2 != 0.0) {
+          lphi = atan2(x0, -y0);
+        } else {
+          lphi = 0.0;
+        }
+
+        if (r2 < 0.5) {
+          ltheta = acos(sqrt(r2));
+        } else if (r2 <= 1.0) {
+          ltheta = asin(sqrt(1.0 - r2));
+        } else {
+          stat[ix*spt+mx*iy*spt] = 1;
+          if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+          return;
+        }
+
+      } else {
+        /* "Synthesis" projection. */
+        xy = x0*xi + y0*eta;
+
+        if (r2 < 1.0e-10) {
+          /* Use small angle formula. */
+          z = r2/2.0;
+          ltheta = 90.0 - R2D*sqrt(r2/(1.0 + xy));
+
+        } else {
+          a = aoff;
+          b = xy + boff;
+          c = r2 - xy - xy + coff;
+          d = b*b - a*c;
+
+          /* Check for a solution. */
+          if (d < 0.0) {
+            lphi = 0.0;
+            ltheta = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+          d = sqrt(d);
+
+          /* Choose solution closest to pole. */
+          sinth1 = (-b + d)/a;
+          sinth2 = (-b - d)/a;
+          sinthe = (sinth1 > sinth2) ? sinth1 : sinth2;
+          if (sinthe > 1.0) {
+            if (sinthe-1.0 < tol) {
+              sinthe = 1.0;
+            } else {
+              sinthe = (sinth1 < sinth2) ? sinth1 : sinth2;
+            }
+          }
+
+          if (sinthe < -1.0) {
+            if (sinthe+1.0 > -tol) {
+              sinthe = -1.0;
+            }
+          }
+
+          if (sinthe > 1.0 || sinthe < -1.0) {
+            lphi = 0.0;
+            ltheta = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+
+          ltheta = asin(sinthe);
+          z = 1.0 - sinthe;
+        }
+
+        x1 = -y0 + eta*z;
+        y1 =  x0 -  xi*z;
+        if (x1 == 0.0 && y1 == 0.0) {
+          lphi = 0.0;
+        } else {
+          lphi = atan2(y1,x1);
+        }
+      }
+  int mphi, mtheta;
+  double cosphi, costhe, sinphi, r, t, z1, z2;
+  register int iphi, itheta, istat;
+
+
+  mphi   = nphi;
+  mtheta = ntheta;
+
+  status = 0;
+
+  /* Do theta dependence. */
+  itheta = threadIdx.y + blockIdx.y * blockDim.y;
+  iphi = threadIdx.x + blockIdx.x * blockDim.x;
+  if (iphi>mphi || itheta>mtheta) return;
+  //for (itheta = 0; itheta < ntheta; itheta++) {
+    t = (90.0 - fabs(ltheta))*D2R;
+    if (t < 1.0e-5) {
+      if (ltheta > 0.0) {
+         z = t*t/2.0;
+      } else {
+         z = 2.0 - t*t/2.0;
+      }
+      costhe = t;
+    } else {
+      z = 1.0 - sin(ltheta);
+      costhe = cos(ltheta);
+    }
+    r = r0*costhe;
+
+    if (scale_out == 0.0) {
+      /* Orthographic projection. */
+      istat = 0;
+      if (bounds&1) {
+        if (ltheta < 0.0) {
+          istat = 1;
+          if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+        }
+      }
+
+      //for (iphi = 0; iphi < mphi; iphi++, xp += sxy, yp += sxy) {
+        sincos(lphi, &sinphi, &cosphi); 
+        x[iphi*sxy+mphi*sxy*itheta] =  r*sinphi - xoff_out;
+        y[iphi*sxy+mphi*sxy*itheta] =  -r*cosphi - yoff_out;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+
+    } else {
+      /* "Synthesis" projection. */
+      z *= r0;
+      z1 = sintheta0*z - xoff_out;
+      z2 = costheta0*z - yoff_out;
+
+      //for (iphi = 0; iphi < mphi; iphi++) {
+        istat = 0;
+        sincos(lphi, &sinphi, &cosphi); 
+        if (bounds&1) {
+          t = -atan(sintheta0*(sinphi) - costheta0*(cosphi));
+          if (ltheta < t) {
+            istat = 1;
+            if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+          }
+        }
+
+        x[iphi*sxy+mphi*sxy*itheta] = r*sinphi + z1;
+        y[iphi*sxy+mphi*sxy*itheta] = -r*cosphi + z2;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+    }
+  //}
+
+  //return status;
+}
+__device__
+void reproject_dev(double xi, double eta, double xoff, double yoff, double scale, 
+                double aoff, double boff, double coff, int nx, int ny, int nphi, int ntheta, 
+                int sxy, int spt, double r0, double scale_out, double xoff_out, double yoff_out,
+                double sintheta0, double costheta0, int bounds, double* x_in, double* y_in, 
+                double2* img_orig, int sz, double xgrid, double ygrid, double2* img_out, int *stat)
+{
+  int mx, my, status;
+  const double tol = 1.0e-13;
+  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+         y1, z, x, y;
+  int ix, iy;
+  double lphi, ltheta;
+
+
+  mx = nx;
+  my = ny;
+
+  status = 0;
+
+
+  /* Do x dependence. */
+
+  /* Do y dependence. */
+  iy=threadIdx.y + blockIdx.y * blockDim.y;
+  ix=threadIdx.x + blockIdx.x * blockDim.x;
+  if (ix>mx || iy>my) return;
+    //Assumes a regular, rectangular grid
+    y0 = (y_in[sxy*iy] + yoff)*scale;
+    y02 = y0*y0;
+
+      /* Compute intermediaries. */
+      x0 = (x_in[sxy*ix] + xoff)*scale;
+      r2 = x0*x0 + y02;
+
+      if (boff == 0.0) {
+        /* Orthographic projection. */
+        if (r2 != 0.0) {
+          lphi = atan2(x0, -y0);
+        } else {
+          lphi = 0.0;
+        }
+
+        if (r2 < 0.5) {
+          ltheta = acos(sqrt(r2));
+        } else if (r2 <= 1.0) {
+          ltheta = asin(sqrt(1.0 - r2));
+        } else {
+          stat[ix*spt+mx*iy*spt] = 1;
+          if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+          return;
+        }
+
+      } else {
+        /* "Synthesis" projection. */
+        xy = x0*xi + y0*eta;
+
+        if (r2 < 1.0e-10) {
+          /* Use small angle formula. */
+          z = r2/2.0;
+          ltheta = 90.0 - R2D*sqrt(r2/(1.0 + xy));
+
+        } else {
+          a = aoff;
+          b = xy + boff;
+          c = r2 - xy - xy + coff;
+          d = b*b - a*c;
+
+          /* Check for a solution. */
+          if (d < 0.0) {
+            lphi = 0.0;
+            ltheta = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+          d = sqrt(d);
+
+          /* Choose solution closest to pole. */
+          sinth1 = (-b + d)/a;
+          sinth2 = (-b - d)/a;
+          sinthe = (sinth1 > sinth2) ? sinth1 : sinth2;
+          if (sinthe > 1.0) {
+            if (sinthe-1.0 < tol) {
+              sinthe = 1.0;
+            } else {
+              sinthe = (sinth1 < sinth2) ? sinth1 : sinth2;
+            }
+          }
+
+          if (sinthe < -1.0) {
+            if (sinthe+1.0 > -tol) {
+              sinthe = -1.0;
+            }
+          }
+
+          if (sinthe > 1.0 || sinthe < -1.0) {
+            lphi = 0.0;
+            ltheta = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+
+          ltheta = asin(sinthe);
+          z = 1.0 - sinthe;
+        }
+
+        x1 = -y0 + eta*z;
+        y1 =  x0 -  xi*z;
+        if (x1 == 0.0 && y1 == 0.0) {
+          lphi = 0.0;
+        } else {
+          lphi = atan2(y1,x1);
+        }
+      }
+  int mphi, mtheta;
+  double cosphi, costhe, sinphi, r, t, z1, z2;
+  register int iphi, itheta, istat;
+
+
+  mphi   = nphi;
+  mtheta = ntheta;
+
+  status = 0;
+
+  /* Do theta dependence. */
+  itheta = threadIdx.y + blockIdx.y * blockDim.y;
+  iphi = threadIdx.x + blockIdx.x * blockDim.x;
+  if (iphi>mphi || itheta>mtheta) return;
+  //for (itheta = 0; itheta < ntheta; itheta++) {
+    t = (90.0 - fabs(ltheta))*D2R;
+    if (t < 1.0e-5) {
+      if (ltheta > 0.0) {
+         z = t*t/2.0;
+      } else {
+         z = 2.0 - t*t/2.0;
+      }
+      costhe = t;
+    } else {
+      z = 1.0 - sin(ltheta);
+      costhe = cos(ltheta);
+    }
+    r = r0*costhe;
+
+    if (scale_out == 0.0) {
+      /* Orthographic projection. */
+      istat = 0;
+      if (bounds&1) {
+        if (ltheta < 0.0) {
+          istat = 1;
+          if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+        }
+      }
+
+      //for (iphi = 0; iphi < mphi; iphi++, xp += sxy, yp += sxy) {
+        sincos(lphi, &sinphi, &cosphi); 
+        x =  r*sinphi - xoff_out;
+        y =  -r*cosphi - yoff_out;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+
+    } else {
+      /* "Synthesis" projection. */
+      z *= r0;
+      z1 = sintheta0*z - xoff_out;
+      z2 = costheta0*z - yoff_out;
+
+      //for (iphi = 0; iphi < mphi; iphi++) {
+        istat = 0;
+        sincos(lphi, &sinphi, &cosphi); 
+        if (bounds&1) {
+          t = -atan(sintheta0*(sinphi) - costheta0*(cosphi));
+          if (ltheta < t) {
+            istat = 1;
+            if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+          }
+        }
+
+        x = r*sinphi + z1;
+        y = -r*cosphi + z2;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+    }
+  //}
+
+    double thisx = x-IMGX0;
+    double thisy = y-IMGY0;
+    x0 = floorf(thisx/xgrid)+PAD_SIZE;
+    double xfrac = thisx/xgrid-x0+PAD_SIZE;
+    y0 = floorf(thisy/ygrid)+PAD_SIZE;
+    double yfrac = thisy/ygrid-y0+PAD_SIZE;
+    int inx0 = IMG_PAD*y0+x0;
+    inx0 %= IMG_PAD*IMG_PAD;
+    double out_x = img_orig[inx0].x;
+    double out_y = img_orig[inx0].y;
+    out_x *= (1-xfrac)*(1-yfrac);
+    out_y *= (1-xfrac)*(1-yfrac);
+    out_x += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].x;
+    out_y += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].y;
+    out_x += xfrac*(1-yfrac)*img_orig[inx0+1].x;
+    out_y += xfrac*(1-yfrac)*img_orig[inx0+1].y;
+    out_x += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].x;
+    out_y += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].y;
+    int q = iphi+mphi*itheta;
+    img_out[iphi+mphi*itheta].x = out_x;
+    img_out[iphi+mphi*itheta].y = out_y;
+  //return status;
+}
+__device__
+void coord_convert_dev(double xi, double eta, double xoff, double yoff, double scale, 
+                double aoff, double boff, double coff, int nx, int ny, 
+                int sxy, int spt, double r0, double scale_out, double xoff_out, double yoff_out,
+                double sintheta0, double costheta0, int bounds, double *x, double *y, int *stat)
+{
+  int mx, my, status;
+  const double tol = 1.0e-13;
+  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+         y1, z;
+  int ix, iy;
+  double phi, theta;
+
+
+  mx = nx;
+  my = ny;
+
+  status = 0;
+
+
+  /* Do x dependence. */
+
+  /* Do y dependence. */
+  iy=threadIdx.y + blockIdx.y * blockDim.y;
+  ix=threadIdx.x + blockIdx.x * blockDim.x;
+  if (ix>mx || iy>my) return;
+    y0 = (y[sxy*iy] + yoff)*scale;
+    y02 = y0*y0;
+
+      /* Compute intermediaries. */
+      x0 = (x[sxy*ix] + xoff)*scale;
+      r2 = x0*x0 + y02;
+
+      if (boff == 0.0) {
+        /* Orthographic projection. */
+        if (r2 != 0.0) {
+          phi = atan2(x0, -y0);
+        } else {
+          phi = 0.0;
+        }
+
+        if (r2 < 0.5) {
+          theta = acos(sqrt(r2));
+        } else if (r2 <= 1.0) {
+          theta = asin(sqrt(1.0 - r2));
+        } else {
+          stat[ix*spt+mx*iy*spt] = 1;
+          if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+          return;
+        }
+
+      } else {
+        /* "Synthesis" projection. */
+        xy = x0*xi + y0*eta;
+
+        if (r2 < 1.0e-10) {
+          /* Use small angle formula. */
+          z = r2/2.0;
+          theta = 90.0 - R2D*sqrt(r2/(1.0 + xy));
+
+        } else {
+          a = aoff;
+          b = xy + boff;
+          c = r2 - xy - xy + coff;
+          d = b*b - a*c;
+
+          /* Check for a solution. */
+          if (d < 0.0) {
+            phi = 0.0;
+            theta = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+          d = sqrt(d);
+
+          /* Choose solution closest to pole. */
+          sinth1 = (-b + d)/a;
+          sinth2 = (-b - d)/a;
+          sinthe = (sinth1 > sinth2) ? sinth1 : sinth2;
+          if (sinthe > 1.0) {
+            if (sinthe-1.0 < tol) {
+              sinthe = 1.0;
+            } else {
+              sinthe = (sinth1 < sinth2) ? sinth1 : sinth2;
+            }
+          }
+
+          if (sinthe < -1.0) {
+            if (sinthe+1.0 > -tol) {
+              sinthe = -1.0;
+            }
+          }
+
+          if (sinthe > 1.0 || sinthe < -1.0) {
+            phi = 0.0;
+            theta = 0.0;
+            stat[ix*spt+mx*iy*spt] = 1;
+            if (!status) status = PRJERR_BAD_PIX_SET_SIN;
+            return;
+          }
+
+          theta = 0.0;
+           asin(sinthe);
+          z = 1.0 - sinthe;
+        }
+
+        x1 = -y0 + eta*z;
+        y1 =  x0 -  xi*z;
+        if (x1 == 0.0 && y1 == 0.0) {
+          phi = 0.0;
+        } else {
+          phi = atan2(y1,x1);
+        }
+      }
+  int mphi, mtheta;
+  double cosphi, costhe, sinphi, r, t, z1, z2;
+  register int iphi, itheta, istat;
+
+  mphi   = nx;
+  mtheta = ny;
+
+  /* Do theta dependence. */
+  itheta = threadIdx.y + blockIdx.y * blockDim.y;
+  iphi = threadIdx.x + blockIdx.x * blockDim.x;
+  if (iphi>mphi || itheta>mtheta) return;
+  //for (itheta = 0; itheta < ntheta; itheta++) {
+    t = (90.0 - fabs(theta))*D2R;
+    if (t < 1.0e-5) {
+      if (theta > 0.0) {
+         z = t*t/2.0;
+      } else {
+         z = 2.0 - t*t/2.0;
+      }
+      costhe = t;
+    } else {
+      z = 1.0 - sin(theta);
+      costhe = cos(theta);
+    }
+    r = r0*costhe;
+
+    if (scale == 0.0) {
+      /* Orthographic projection. */
+      istat = 0;
+      if (bounds&1) {
+        if (theta < 0.0) {
+          istat = 1;
+          if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+        }
+      }
+
+      //for (iphi = 0; iphi < mphi; iphi++, xp += sxy, yp += sxy) {
+        sincos(phi, &sinphi, &cosphi); 
+        x[iphi*sxy+mphi*sxy*itheta] =  r*sinphi - xoff_out;
+        y[iphi*sxy+mphi*sxy*itheta] =  -r*cosphi - yoff_out;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+
+    } else {
+      /* "Synthesis" projection. */
+      z *= r0;
+      z1 = sintheta0*z - xoff_out;
+      z2 = costheta0*z - yoff_out;
+
+      //for (iphi = 0; iphi < mphi; iphi++) {
+        istat = 0;
+        sincos(phi, &sinphi, &cosphi); 
+        if (bounds&1) {
+          t = -atan(sintheta0*(sinphi) - costheta0*(cosphi));
+          if (theta < t) {
+            istat = 1;
+            if (!status) status = PRJERR_BAD_WORLD_SET_SIN;
+          }
+        }
+
+        x[iphi*sxy+mphi*sxy*itheta] = r*sinphi + z1;
+        y[iphi*sxy+mphi*sxy*itheta] = -r*cosphi + z2;
+        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+      //}
+    }
+  //}
+
+   return;
+}
 __global__ void sinx2s_kernel(double xi, double eta, double xoff, double yoff, double scale,
                 double aoff, double boff, double coff, int nx, int ny, int sxy, 
                 int spt, double *x, double *y, double *phi, double *theta, 
@@ -769,15 +1401,29 @@ __global__ void interp_kernel(const double* x3, const double* y3, double2* img_o
 }
 __global__ void coord_convert(double xi, double eta, double xoff, double yoff, double scale_in,
                double aoff, double boff, double coff, int nx, int ny, 
-               double r0, double scale_out, double x0, double y0, double sintheta0,
+               double r0, double scale_out, double xoff_out, double yoff_out, double sintheta0,
                double costheta0, int bounds, int nphi, int ntheta, 
                int sxy, int spt, double *x, double *y, double *phi, double *theta, 
                double2* img_orig, int sz, double xgrid, double ygrid, double2* img_out, int *stat) {
-  sinx2s_dev(xi, eta, xoff, yoff, scale_in, aoff, boff, coff, nx, ny, sxy, spt, 
-             x, y, phi, theta, stat);
-  sins2x_dev(r0, scale_out, x0, y0, sintheta0, costheta0, bounds, nphi, ntheta, sxy, spt, 
-             phi, theta, x, y, stat);
-  interp_dev(x, y, img_orig, sz, xgrid, ygrid, img_out);
+  //coord_convert_dev(xi,eta, xoff, yoff, scale_in, aoff, boff, coff, nx, ny, sxy, spt, 
+  //                  r0, scale_out, xoff_out, yoff_out, sintheta0, costheta0, bounds, 
+  //                  x, y, stat);
+  //sinx2s_dev(xi, eta, xoff, yoff, scale_in, aoff, boff, coff, nx, ny, sxy, spt, 
+  //           x, y, phi, theta, stat);
+  //sins2x_dev(r0, scale_out, xoff_out, yoff_out, sintheta0, costheta0, bounds, nphi, ntheta, sxy, spt, 
+  //           phi, theta, x, y, stat);
+  //cc_dev(xi, eta, xoff, yoff, scale_in, 
+  //              aoff, boff, coff, nx, ny, nphi, ntheta, 
+  //              sxy, spt, r0, scale_out, xoff_out, yoff_out,
+  //              sintheta0, costheta0, bounds, x, y, stat,
+  //              phi, theta);
+  //interp_dev(x, y, img_orig, sz, xgrid, ygrid, img_out);
+  reproject_dev(xi, eta, xoff, yoff, scale_in, 
+                aoff, boff, coff, nx, ny, nphi, ntheta, 
+                sxy, spt, r0, scale_out, xoff_out, yoff_out,
+                sintheta0, costheta0, bounds, x, y, img_orig, sz,
+                xgrid, ygrid, img_out, stat);
+  
 }
 
 
@@ -834,7 +1480,7 @@ int main(void) {
                         std::cout << "ERROR in sinx2s" << std::endl;
 
    /*** Execute s2x two ways ***/
-   if (sins2x(&prj, SIZEX, SIZEY, 1, 1, phi, theta, x2, y2, stat)) 
+   if (sins2x_alt2(&prj, SIZEX, SIZEY, 1, 1, phi, theta, x2, y2, stat)) 
                         std::cout << "ERROR in sins2x" << std::endl;
 
    double xmin, xmax, ymin, ymax;
@@ -886,7 +1532,7 @@ int main(void) {
    checkCudaError(__LINE__,__FILE__);
 
    /*** Compute on GPU ***/
-   coord_convert<<<dim3(1,SIZEY),SIZEX>>>(prj.pv[1], prj.pv[2], prj.x0, prj.y0, prj.w[0], 
+   coord_convert<<<dim3((SIZEX+512-1)/512,SIZEY),512>>>(prj.pv[1], prj.pv[2], prj.x0, prj.y0, prj.w[0], 
                      prj.w[2], -prj.w[1], prj.w[3], SIZEX, SIZEY, prj.r0, prj.w[1], 
                      prj.x0, prj.y0, prj.pv[1], prj.pv[2], prj.bounds, SIZEX, SIZEY, 
                      1, 1, dx, dy, dphi, dtheta, dimg_orig, IMG_SIZE*IMG_SIZE, xgrid, ygrid,
