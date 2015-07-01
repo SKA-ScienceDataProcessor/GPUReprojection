@@ -29,6 +29,10 @@
 #define IMGY0 -0.4
 #define IMGY1 0.0
 
+#ifndef DATATYPE_INTERP
+#define DATATYPE_INTERP DATATYPE
+#define DATATYPE_INTERP2 DATATYPE2
+#endif
 
 void checkCudaError(int line, const char* filename) {
    cudaError_t err = cudaGetLastError();
@@ -37,19 +41,19 @@ void checkCudaError(int line, const char* filename) {
 }
 struct prjprm {
    int flag;
-   double pv[3];
-   double x0, y0;
-   double w[4]; 
-   double r0;
+   DATATYPE pv[3];
+   DATATYPE x0, y0;
+   DATATYPE w[4]; 
+   DATATYPE r0;
    int bounds;
 };
 
 //__device__
-int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, double *x, double *y, double *phi, double *theta, int *stat)
+int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, DATATYPE *theta, int *stat)
 {
   int mx, my, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, eta, r2, sinth1, sinth2, sinthe, x0, xi, x1, xy, y0, y02,
+  const DATATYPE tol = 1.0e-13;
+  DATATYPE a, b, c, d, eta, r2, sinth1, sinth2, sinthe, x0, xi, x1, xy, y0, y02,
          y1, z;
   int ix, iy;
 
@@ -174,15 +178,15 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, double *x, 
   return 0;
 }
 //__device__
-int sinx2s(struct prjprm *prj, int nx, int ny, int sxy, int spt, double *x, double *y, double *phi, double *theta, int *stat)
+int sinx2s(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, DATATYPE *theta, int *stat)
 {
   int mx, my, rowlen, rowoff, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, eta, r2, sinth1, sinth2, sinthe, x0, xi, x1, xy, y0, y02,
+  const DATATYPE tol = 1.0e-13;
+  DATATYPE a, b, c, d, eta, r2, sinth1, sinth2, sinthe, x0, xi, x1, xy, y0, y02,
          y1, z;
   int ix, iy, *statp;
-  const double *xp, *yp;
-  double *phip, *thetap;
+  const DATATYPE *xp, *yp;
+  DATATYPE *phip, *thetap;
 
 
   /* Initialize. */
@@ -325,11 +329,11 @@ int sinx2s(struct prjprm *prj, int nx, int ny, int sxy, int spt, double *x, doub
 }
 
 /*--------------------------------------------------------------------------*/
-int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, double *theta, double *x, double *y, int *stat)
+int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
   int mphi, mtheta, status;
-  double cosphi, costhe, sinphi, r, t, z, z1, z2;
+  DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat;
 
 
@@ -403,11 +407,11 @@ int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi,
 
   return status;
 }
-int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, double *theta, double *x, double *y, int *stat)
+int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
   int mphi, mtheta, status;
-  double cosphi, costhe, sinphi, r, t, z, z1, z2;
+  DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat;
 
 
@@ -478,14 +482,14 @@ int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi
 
   return status;
 }
-int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, double *theta, double *x, double *y, int *stat)
+int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
   int mphi, mtheta, rowlen, rowoff, status;
-  double cosphi, costhe, sinphi, r, t, z, z1, z2;
+  DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat, *statp;
-  register const double *phip, *thetap;
-  register double *xp, *yp;
+  register const DATATYPE *phip, *thetap;
+  register DATATYPE *xp, *yp;
 
 
   if (ntheta > 0) {
@@ -580,14 +584,14 @@ int sins2x(prjprm *prj, int nphi, int ntheta, int spt, int sxy, double *phi, dou
   return status;
 }
 __device__
-void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale, 
-                double aoff, double boff, double coff, int nx, int ny, 
-                int sxy, int spt, double *x, double *y, double *phi, 
-                double *theta, int *stat)
+void sinx2s_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE scale, 
+                DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, 
+                int sxy, int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, 
+                DATATYPE *theta, int *stat)
 {
   int mx, my, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+  const DATATYPE tol = 1.0e-13;
+  DATATYPE a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
          y1, z;
   int ix, iy;
 
@@ -696,13 +700,13 @@ void sinx2s_dev(double xi, double eta, double xoff, double yoff, double scale,
    return;
 }
 __device__
-void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
-               double costheta0, int bounds, int nphi, int ntheta, int spt, 
-               int sxy, double *phi, double *theta, double *x, double *y, int *stat)
+void sins2x_dev(DATATYPE r0, DATATYPE scale, DATATYPE x0, DATATYPE y0, DATATYPE sintheta0,
+               DATATYPE costheta0, int bounds, int nphi, int ntheta, int spt, 
+               int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
   int mphi, mtheta, status;
-  double cosphi, costhe, sinphi, r, t, z, z1, z2;
+  DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat;
 
 
@@ -774,18 +778,18 @@ void sins2x_dev(double r0, double scale, double x0, double y0, double sintheta0,
   //return status;
 }
 __device__
-void cc_dev(double xi, double eta, double xoff, double yoff, double scale, 
-                double aoff, double boff, double coff, int nx, int ny, int nphi, int ntheta, 
-                int sxy, int spt, double r0, double scale_out, double xoff_out, double yoff_out,
-                double sintheta0, double costheta0, int bounds, double *x, double *y, int *stat,
-                double* phi, double* theta)
+void cc_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE scale, 
+                DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, int nphi, int ntheta, 
+                int sxy, int spt, DATATYPE r0, DATATYPE scale_out, DATATYPE xoff_out, DATATYPE yoff_out,
+                DATATYPE sintheta0, DATATYPE costheta0, int bounds, DATATYPE *x, DATATYPE *y, int *stat,
+                DATATYPE* phi, DATATYPE* theta)
 {
   int mx, my, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+  const DATATYPE tol = 1.0e-13;
+  DATATYPE a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
          y1, z;
   int ix, iy;
-  double lphi, ltheta;
+  DATATYPE lphi, ltheta;
 
 
   mx = nx;
@@ -889,7 +893,7 @@ void cc_dev(double xi, double eta, double xoff, double yoff, double scale,
         }
       }
   int mphi, mtheta;
-  double cosphi, costhe, sinphi, r, t, z1, z2;
+  DATATYPE cosphi, costhe, sinphi, r, t, z1, z2;
   register int iphi, itheta, istat;
 
 
@@ -961,18 +965,19 @@ void cc_dev(double xi, double eta, double xoff, double yoff, double scale,
   //return status;
 }
 __device__
-void reproject_dev(double xi, double eta, double xoff, double yoff, double scale, 
-                double aoff, double boff, double coff, int nx, int ny, int nphi, int ntheta, 
-                int sxy, int spt, double r0, double scale_out, double xoff_out, double yoff_out,
-                double sintheta0, double costheta0, int bounds, double* x_in, double* y_in, 
-                double2* img_orig, int sz, double xgrid, double ygrid, double2* img_out, int *stat)
+void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE scale, 
+                DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, int nphi, int ntheta, 
+                int sxy, int spt, DATATYPE r0, DATATYPE scale_out, DATATYPE xoff_out, DATATYPE yoff_out,
+                DATATYPE sintheta0, DATATYPE costheta0, int bounds, DATATYPE* x_in, DATATYPE* y_in, 
+                DATATYPE_INTERP2* img_orig, int sz, DATATYPE xgrid, DATATYPE ygrid, 
+                DATATYPE_INTERP2* img_out, int *stat)
 {
   int mx, my, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+  const DATATYPE tol = 1.0e-13;
+  DATATYPE a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
          y1, z, x, y;
   int ix, iy;
-  double lphi, ltheta;
+  DATATYPE lphi, ltheta;
 
 
   mx = nx;
@@ -1077,8 +1082,8 @@ void reproject_dev(double xi, double eta, double xoff, double yoff, double scale
         }
       }
   int mphi, mtheta;
-  double cosphi, costhe, sinphi, r, t, z1, z2;
-  register int iphi, itheta, istat;
+  DATATYPE cosphi, costhe, sinphi, r, t, z1, z2;
+  int iphi, itheta, istat;
 
 
   mphi   = nphi;
@@ -1146,16 +1151,17 @@ void reproject_dev(double xi, double eta, double xoff, double yoff, double scale
     }
   //}
 
-    double thisx = x-IMGX0;
-    double thisy = y-IMGY0;
+#if 1
+    DATATYPE thisx = x-IMGX0;
+    DATATYPE thisy = y-IMGY0;
     x0 = floorf(thisx/xgrid)+PAD_SIZE;
-    double xfrac = thisx/xgrid-x0+PAD_SIZE;
+    DATATYPE xfrac = thisx/xgrid-x0+PAD_SIZE;
     y0 = floorf(thisy/ygrid)+PAD_SIZE;
-    double yfrac = thisy/ygrid-y0+PAD_SIZE;
+    DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
     int inx0 = IMG_PAD*y0+x0;
     inx0 %= IMG_PAD*IMG_PAD;
-    double out_x = img_orig[inx0].x;
-    double out_y = img_orig[inx0].y;
+    DATATYPE_INTERP out_x = img_orig[inx0].x;
+    DATATYPE_INTERP out_y = img_orig[inx0].y;
     out_x *= (1-xfrac)*(1-yfrac);
     out_y *= (1-xfrac)*(1-yfrac);
     out_x += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].x;
@@ -1167,20 +1173,21 @@ void reproject_dev(double xi, double eta, double xoff, double yoff, double scale
     int q = iphi+mphi*itheta;
     img_out[iphi+mphi*itheta].x = out_x;
     img_out[iphi+mphi*itheta].y = out_y;
+#endif
   //return status;
 }
 __device__
-void coord_convert_dev(double xi, double eta, double xoff, double yoff, double scale, 
-                double aoff, double boff, double coff, int nx, int ny, 
-                int sxy, int spt, double r0, double scale_out, double xoff_out, double yoff_out,
-                double sintheta0, double costheta0, int bounds, double *x, double *y, int *stat)
+void coord_convert_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE scale, 
+                DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, 
+                int sxy, int spt, DATATYPE r0, DATATYPE scale_out, DATATYPE xoff_out, DATATYPE yoff_out,
+                DATATYPE sintheta0, DATATYPE costheta0, int bounds, DATATYPE *x, DATATYPE *y, int *stat)
 {
   int mx, my, status;
-  const double tol = 1.0e-13;
-  double a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
+  const DATATYPE tol = 1.0e-13;
+  DATATYPE a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
          y1, z;
   int ix, iy;
-  double phi, theta;
+  DATATYPE phi, theta;
 
 
   mx = nx;
@@ -1285,7 +1292,7 @@ void coord_convert_dev(double xi, double eta, double xoff, double yoff, double s
         }
       }
   int mphi, mtheta;
-  double cosphi, costhe, sinphi, r, t, z1, z2;
+  DATATYPE cosphi, costhe, sinphi, r, t, z1, z2;
   register int iphi, itheta, istat;
 
   mphi   = nx;
@@ -1353,34 +1360,34 @@ void coord_convert_dev(double xi, double eta, double xoff, double yoff, double s
 
    return;
 }
-__global__ void sinx2s_kernel(double xi, double eta, double xoff, double yoff, double scale,
-                double aoff, double boff, double coff, int nx, int ny, int sxy, 
-                int spt, double *x, double *y, double *phi, double *theta, 
+__global__ void sinx2s_kernel(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE scale,
+                DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, int sxy, 
+                int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, DATATYPE *theta, 
                 int *stat)                                                 {
   sinx2s_dev(xi, eta, xoff, yoff, scale, aoff, boff, coff, nx, ny, sxy, spt, 
              x, y, phi, theta, stat);
 }
-__global__ void sins2x_kernel(double r0, double scale, double x0, double y0, double sintheta0,
-               double costheta0, int bounds, int nphi, int ntheta, int spt, 
-               int sxy, double *phi, double *theta, double *x, double *y, int *stat) {
+__global__ void sins2x_kernel(DATATYPE r0, DATATYPE scale, DATATYPE x0, DATATYPE y0, DATATYPE sintheta0,
+               DATATYPE costheta0, int bounds, int nphi, int ntheta, int spt, 
+               int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat) {
   sins2x_dev(r0, scale, x0, y0, sintheta0, costheta0, bounds, nphi, ntheta, sxy, spt, 
              phi, theta, x, y, stat);
 }
-__device__ void interp_dev(const double* x3, const double* y3, double2* img_orig, int sz, 
-                              double xgrid, double ygrid, double2* img_out) {
+__device__ void interp_dev(const DATATYPE* x3, const DATATYPE* y3, DATATYPE_INTERP2* img_orig, int sz, 
+                              DATATYPE xgrid, DATATYPE ygrid, DATATYPE_INTERP2* img_out) {
       int z = threadIdx.x + blockIdx.x * blockDim.x;
       z += blockDim.x*gridDim.x*(threadIdx.y + blockIdx.y*blockDim.y); 
       if (z>=sz) return;
-      double thisx = x3[z]-IMGX0;
-      double thisy = y3[z]-IMGY0;
+      DATATYPE thisx = x3[z]-IMGX0;
+      DATATYPE thisy = y3[z]-IMGY0;
       int x0 = floorf(thisx/xgrid)+PAD_SIZE;
-      double xfrac = thisx/xgrid-x0+PAD_SIZE;
+      DATATYPE xfrac = thisx/xgrid-x0+PAD_SIZE;
       int y0 = floorf(thisy/ygrid)+PAD_SIZE;
-      double yfrac = thisy/ygrid-y0+PAD_SIZE;
+      DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
       int inx0 = IMG_PAD*y0+x0;
       inx0 %= IMG_PAD*IMG_PAD;
-      double out_x = img_orig[inx0].x;
-      double out_y = img_orig[inx0].y;
+      DATATYPE_INTERP out_x = img_orig[inx0].x;
+      DATATYPE_INTERP out_y = img_orig[inx0].y;
       out_x *= (1-xfrac)*(1-yfrac);
       out_y *= (1-xfrac)*(1-yfrac);
       out_x += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].x;
@@ -1395,16 +1402,17 @@ __device__ void interp_dev(const double* x3, const double* y3, double2* img_orig
       //img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
      
 }
-__global__ void interp_kernel(const double* x3, const double* y3, double2* img_orig, int sz, 
-                              double xgrid, double ygrid, double2* img_out) {
+__global__ void interp_kernel(const DATATYPE* x3, const DATATYPE* y3, DATATYPE_INTERP2* img_orig, int sz, 
+                              DATATYPE xgrid, DATATYPE ygrid, DATATYPE_INTERP2* img_out) {
   interp_dev(x3, y3, img_orig, sz, xgrid, ygrid, img_out);
 }
-__global__ void coord_convert(double xi, double eta, double xoff, double yoff, double scale_in,
-               double aoff, double boff, double coff, int nx, int ny, 
-               double r0, double scale_out, double xoff_out, double yoff_out, double sintheta0,
-               double costheta0, int bounds, int nphi, int ntheta, 
-               int sxy, int spt, double *x, double *y, double *phi, double *theta, 
-               double2* img_orig, int sz, double xgrid, double ygrid, double2* img_out, int *stat) {
+__global__ void coord_convert(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE scale_in,
+               DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, 
+               DATATYPE r0, DATATYPE scale_out, DATATYPE xoff_out, DATATYPE yoff_out, DATATYPE sintheta0,
+               DATATYPE costheta0, int bounds, int nphi, int ntheta, 
+               int sxy, int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, DATATYPE *theta, 
+               DATATYPE_INTERP2* img_orig, int sz, DATATYPE xgrid, DATATYPE ygrid, DATATYPE_INTERP2* img_out, 
+               int *stat) {
   //coord_convert_dev(xi,eta, xoff, yoff, scale_in, aoff, boff, coff, nx, ny, sxy, spt, 
   //                  r0, scale_out, xoff_out, yoff_out, sintheta0, costheta0, bounds, 
   //                  x, y, stat);
@@ -1428,19 +1436,23 @@ __global__ void coord_convert(double xi, double eta, double xoff, double yoff, d
 
 
 int main(void) {
-   double *x, *y, *phi, *theta, *x2, *y2;
+   DATATYPE *x, *y, *phi, *theta, *x2, *y2;
 
    int *stat;
 
    struct prjprm prj;
 
-   x = (double*)malloc(sizeof(double)*SIZE);
-   y = (double*)malloc(sizeof(double)*SIZE);
-   x2 = (double*)malloc(sizeof(double)*SIZE);
-   y2 = (double*)malloc(sizeof(double)*SIZE);
-   phi = (double*)malloc(sizeof(double)*SIZE);
-   theta = (double*)malloc(sizeof(double)*SIZE);
+   x = (DATATYPE*)malloc(sizeof(DATATYPE)*SIZE);
+   y = (DATATYPE*)malloc(sizeof(DATATYPE)*SIZE);
+   x2 = (DATATYPE*)malloc(sizeof(DATATYPE)*SIZE);
+   y2 = (DATATYPE*)malloc(sizeof(DATATYPE)*SIZE);
+   phi = (DATATYPE*)malloc(sizeof(DATATYPE)*SIZE);
+   theta = (DATATYPE*)malloc(sizeof(DATATYPE)*SIZE);
    stat = (int*)malloc(sizeof(int)*SIZE);
+
+   if (!x || !y || !x2 || !y2 || !phi || !theta || ! stat) {
+      std::cout << "ERROR. CPU allocate failed." << std::endl;
+   }
 
    /***   Initialize ***/
    srand(2541617);
@@ -1463,12 +1475,12 @@ int main(void) {
       y[z] = YLL + (z/SIZEX)*(YUR/SIZEY);
    }
 
-   double2* img_orig;
-   double2* img_out;
-   double2* img_out2;
-   img_orig = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
-   img_out = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
-   img_out2 = (double2*)malloc(sizeof(double2)*IMG_PAD*IMG_PAD);
+   DATATYPE_INTERP2* img_orig;
+   DATATYPE_INTERP2* img_out;
+   DATATYPE_INTERP2* img_out2;
+   img_orig = (DATATYPE_INTERP2*)malloc(sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD);
+   img_out = (DATATYPE_INTERP2*)malloc(sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD);
+   img_out2 = (DATATYPE_INTERP2*)malloc(sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD);
    if (!img_orig || !img_out || !img_out2) std::cerr << "ERROR. Failed CPU alloc." <<std::endl;
    for (int z=0;z<IMG_PAD*IMG_PAD;z++) {
       img_orig[z].x = (rand()*1.0)/RAND_MAX;
@@ -1483,7 +1495,7 @@ int main(void) {
    if (sins2x_alt2(&prj, SIZEX, SIZEY, 1, 1, phi, theta, x2, y2, stat)) 
                         std::cout << "ERROR in sins2x" << std::endl;
 
-   double xmin, xmax, ymin, ymax;
+   DATATYPE xmin, xmax, ymin, ymax;
    xmin = ymin = 100000000;
    xmax = ymax = -100000000;
    for (int z=0;z<SIZE;z++) {
@@ -1493,63 +1505,82 @@ int main(void) {
       if (y2[z]>ymax) ymax = y2[z]; 
    }
    std::cout << xmin << ", " << ymin << " -- " << xmax << ", " << ymax << std::endl;
-   double xgrid = (IMGX1-IMGX0)/IMG_SIZE;
-   double ygrid = (IMGY1-IMGY0)/IMG_SIZE;
+   DATATYPE xgrid = (IMGX1-IMGX0)/IMG_SIZE;
+   DATATYPE ygrid = (IMGY1-IMGY0)/IMG_SIZE;
    for (int z=0;z<SIZE;z++) {
-      double thisx = x2[z]-IMGX0;
-      double thisy = y2[z]-IMGY0;
+      DATATYPE thisx = x2[z]-IMGX0;
+      DATATYPE thisy = y2[z]-IMGY0;
       int x0 = floorf(thisx/xgrid)+PAD_SIZE;
-      double xfrac = thisx/xgrid-x0+PAD_SIZE;
+      DATATYPE xfrac = thisx/xgrid-x0+PAD_SIZE;
       int y0 = floorf(thisy/ygrid)+PAD_SIZE;
-      double yfrac = thisy/ygrid-y0+PAD_SIZE;
+      DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
       int inx0 = IMG_PAD*y0+x0;
-      double2 g00 = img_orig[inx0];
-      double2 g01 = img_orig[inx0+IMG_PAD];
-      double2 g10 = img_orig[inx0+1];
-      double2 g11 = img_orig[inx0+IMG_PAD+1];
+      DATATYPE_INTERP2 g00 = img_orig[inx0];
+      DATATYPE_INTERP2 g01 = img_orig[inx0+IMG_PAD];
+      DATATYPE_INTERP2 g10 = img_orig[inx0+1];
+      DATATYPE_INTERP2 g11 = img_orig[inx0+IMG_PAD+1];
       img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
       img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
    }
 
    /*** GPU memory ***/
-   double2 *dimg_orig, *dimg_out;
-   cudaMalloc(&dimg_orig, sizeof(double2)*IMG_PAD*IMG_PAD);
-   cudaMalloc(&dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD);
+   DATATYPE_INTERP2 *dimg_orig, *dimg_out;
+   cudaMalloc(&dimg_orig, sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD);
+   cudaMalloc(&dimg_out, sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD);
    if (!dimg_orig || !dimg_out) std::cerr << "ERROR: Failed GPU allocation." << std::endl;
-   cudaMemcpy(dimg_orig, img_orig, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyHostToDevice);
+   cudaMemcpy(dimg_orig, img_orig, sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD, cudaMemcpyHostToDevice);
    checkCudaError(__LINE__,__FILE__);
 
-   double *dx, *dy, *dphi, *dtheta;
+   DATATYPE *dx, *dy, *dphi, *dtheta;
    int *dstat;
-   cudaMalloc(&dx, sizeof(double)*SIZE);
-   cudaMalloc(&dy, sizeof(double)*SIZE);
-   cudaMalloc(&dphi, sizeof(double)*SIZE);
-   cudaMalloc(&dtheta, sizeof(double)*SIZE);
+   cudaMalloc(&dx, sizeof(DATATYPE)*SIZE);
+   cudaMalloc(&dy, sizeof(DATATYPE)*SIZE);
+   cudaMalloc(&dphi, sizeof(DATATYPE)*SIZE);
+   cudaMalloc(&dtheta, sizeof(DATATYPE)*SIZE);
    cudaMalloc(&dstat, sizeof(int)*SIZE);
    
-   cudaMemcpy(dx, x, sizeof(double)*SIZE, cudaMemcpyHostToDevice);
-   cudaMemcpy(dy, y, sizeof(double)*SIZE, cudaMemcpyHostToDevice);
+   cudaMemcpy(dx, x, sizeof(DATATYPE)*SIZE, cudaMemcpyHostToDevice);
+   cudaMemcpy(dy, y, sizeof(DATATYPE)*SIZE, cudaMemcpyHostToDevice);
    checkCudaError(__LINE__,__FILE__);
 
    /*** Compute on GPU ***/
+   cudaEvent_t start, finish;
+   cudaEventCreate(&start); cudaEventCreate(&finish);
+   cudaEventRecord(start);
+   float elapsed;
    coord_convert<<<dim3((SIZEX+512-1)/512,SIZEY),512>>>(prj.pv[1], prj.pv[2], prj.x0, prj.y0, prj.w[0], 
                      prj.w[2], -prj.w[1], prj.w[3], SIZEX, SIZEY, prj.r0, prj.w[1], 
                      prj.x0, prj.y0, prj.pv[1], prj.pv[2], prj.bounds, SIZEX, SIZEY, 
                      1, 1, dx, dy, dphi, dtheta, dimg_orig, IMG_SIZE*IMG_SIZE, xgrid, ygrid,
                      dimg_out, dstat);
+   cudaEventRecord(finish);
+   cudaEventSynchronize(finish);
+   cudaEventElapsedTime(&elapsed, start, finish);
+   cudaEventDestroy(start); cudaEventDestroy(finish);
    checkCudaError(__LINE__,__FILE__);
-   cudaMemcpy(img_out2, dimg_out, sizeof(double2)*IMG_PAD*IMG_PAD, cudaMemcpyDeviceToHost);
+   cudaMemcpy(img_out2, dimg_out, sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD, cudaMemcpyDeviceToHost);
    checkCudaError(__LINE__,__FILE__);
+
+   std::cout << "Elapsed time: " << elapsed << " ms." << std::endl;
+   std::cout << "Throughput: " << 1.0/elapsed*SIZEX*SIZEY/1000/1000 << " Gpixels/sec." << std::endl;
 
    std::cout << "Check results against CPU..." << std::endl;
 
-   for (int z=0;z<SIZE;z+=1000) {
-      if (fabs(img_out2[z].x-img_out[z].x) > 0.00001 ||
-          fabs(img_out2[z].y-img_out[z].y) > 0.00001  ) {
+   double maxerr = 0.0;
+   int maxerrinx = -1;
+   for (int z=0;z<SIZE;z++) {
+      if (0==z%1000 && 
+          (fabs(img_out2[z].x-img_out[z].x) > 0.0001 ||
+           fabs(img_out2[z].y-img_out[z].y) > 0.0001  ) ) {
          std::cout << "Mismatch for z = " << z << ": " << img_out2[z].x << ", " <<img_out2[z].y << " != "
                    << img_out[z].x << ", " << img_out[z].y << std::endl;
       }
+      if (fabs(img_out2[z].x-img_out[z].x > maxerr)) {maxerr = fabs(img_out2[z].x-img_out[z].x); maxerrinx=z;}
+      if (fabs(img_out2[z].y-img_out[z].y > maxerr)) {maxerr = fabs(img_out2[z].y-img_out[z].y); maxerrinx=z;}
    }
+   std::cout << "Largest error at index " << maxerrinx << ".  " << img_out2[maxerrinx].x << ", " 
+             << img_out2[maxerrinx].y << " != " << img_out[maxerrinx].x << ", "
+             << img_out[maxerrinx].y << std::endl;
    free(x);
    free(y);
    free(x2);
