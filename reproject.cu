@@ -48,10 +48,10 @@ struct prjprm {
    int bounds;
 };
 
-//__device__
 int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, DATATYPE *theta, int *stat)
+//Alternate implementation of sinx2s as an intermediate step toward parallel GPU processing
 {
-  int mx, my, status;
+  int status;
   const DATATYPE tol = 1.0e-13;
   DATATYPE a, b, c, d, eta, r2, sinth1, sinth2, sinthe, x0, xi, x1, xy, y0, y02,
          y1, z;
@@ -67,15 +67,6 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x
   xi  = prj->pv[1];
   eta = prj->pv[2];
 
-  if (ny > 0) {
-    mx = nx;
-    my = ny;
-  } else {
-    mx = 1;
-    my = 1;
-    ny = nx;
-  }
-
   status = 0;
 
 
@@ -84,7 +75,7 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x
     y0 = (y[sxy*iy] + prj->y0)*prj->w[0];
     y02 = y0*y0;
 
-    for (ix = 0; ix < mx; ix++) {
+    for (ix = 0; ix < nx; ix++) {
       
       x0 = (x[sxy*ix] + prj->x0)*prj->w[0];
       r2 = x0*x0 + y02;
@@ -92,17 +83,17 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x
       if (prj->w[1] == 0.0) {
         /* Orthographic projection. */
         if (r2 != 0.0) {
-          phi[ix*spt+mx*iy*spt] = atan2(x0, -y0);
+          phi[ix*spt+nx*iy*spt] = atan2(x0, -y0);
         } else {
-          phi[ix*spt+mx*iy*spt] = 0.0;
+          phi[ix*spt+nx*iy*spt] = 0.0;
         }
 
         if (r2 < 0.5) {
-          theta[ix*spt+mx*iy*spt] = acos(sqrt(r2));
+          theta[ix*spt+nx*iy*spt] = acos(sqrt(r2));
         } else if (r2 <= 1.0) {
-          theta[ix*spt+mx*iy*spt] = asin(sqrt(1.0 - r2));
+          theta[ix*spt+nx*iy*spt] = asin(sqrt(1.0 - r2));
         } else {
-          stat[ix*spt+mx*iy*spt] = 1;
+          stat[ix*spt+nx*iy*spt] = 1;
           if (!status) status = PRJERR_BAD_PIX_SET_SIN;
           continue;
         }
@@ -114,7 +105,7 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x
         if (r2 < 1.0e-10) {
           /* Use small angle formula. */
           z = r2/2.0;
-          theta[ix*spt+mx*iy*spt] = 90.0 - R2D*sqrt(r2/(1.0 + xy));
+          theta[ix*spt+nx*iy*spt] = 90.0 - R2D*sqrt(r2/(1.0 + xy));
 
         } else {
           a = prj->w[2];
@@ -124,9 +115,9 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x
 
           /* Check for a solution. */
           if (d < 0.0) {
-            phi[ix*spt+mx*iy*spt] = 0.0;
-            theta[ix*spt+mx*iy*spt] = 0.0;
-            stat[ix*spt+mx*iy*spt] = 1;
+            phi[ix*spt+nx*iy*spt] = 0.0;
+            theta[ix*spt+nx*iy*spt] = 0.0;
+            stat[ix*spt+nx*iy*spt] = 1;
             if (!status) status = PRJERR_BAD_PIX_SET_SIN;
             continue;
           }
@@ -151,27 +142,27 @@ int sinx2s_alt(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x
           }
 
           if (sinthe > 1.0 || sinthe < -1.0) {
-            phi[ix*spt+mx*iy*spt] = 0.0;
-            theta[ix*spt+mx*iy*spt] = 0.0;
-            stat[ix*spt+mx*iy*spt] = 1;
+            phi[ix*spt+nx*iy*spt] = 0.0;
+            theta[ix*spt+nx*iy*spt] = 0.0;
+            stat[ix*spt+nx*iy*spt] = 1;
             if (!status) status = PRJERR_BAD_PIX_SET_SIN;
             continue;
           }
 
-          theta[ix*spt+mx*iy*spt] = asin(sinthe);
+          theta[ix*spt+nx*iy*spt] = asin(sinthe);
           z = 1.0 - sinthe;
         }
 
         x1 = -y0 + eta*z;
         y1 =  x0 -  xi*z;
         if (x1 == 0.0 && y1 == 0.0) {
-          phi[ix*spt+mx*iy*spt] = 0.0;
+          phi[ix*spt+nx*iy*spt] = 0.0;
         } else {
-          phi[ix*spt+mx*iy*spt] = atan2(y1,x1);
+          phi[ix*spt+nx*iy*spt] = atan2(y1,x1);
         }
       }
 
-      stat[ix*spt+mx*iy*spt] = 0;
+      stat[ix*spt+nx*iy*spt] = 0;
     }
   }
 
@@ -332,19 +323,10 @@ int sinx2s(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x, DA
 int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
-  int mphi, mtheta, status;
+  int mphi, status;
   DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat;
 
-
-  if (ntheta > 0) {
-    mphi   = nphi;
-    mtheta = ntheta;
-  } else {
-    mphi   = 1;
-    mtheta = 1;
-    ntheta = nphi;
-  }
 
   status = 0;
 
@@ -410,19 +392,10 @@ int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *ph
 int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
-  int mphi, mtheta, status;
+  int mphi, status;
   DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat;
 
-
-  if (ntheta > 0) {
-    mphi   = nphi;
-    mtheta = ntheta;
-  } else {
-    mphi   = 1;
-    mtheta = 1;
-    ntheta = nphi;
-  }
 
   status = 0;
 
@@ -1170,7 +1143,6 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     out_y += xfrac*(1-yfrac)*img_orig[inx0+1].y;
     out_x += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].x;
     out_y += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].y;
-    int q = iphi+mphi*itheta;
     img_out[iphi+mphi*itheta].x = out_x;
     img_out[iphi+mphi*itheta].y = out_y;
 #endif
@@ -1601,4 +1573,5 @@ int main(void) {
    cudaFree(dimg_out);
 
    
+   return 0;
 }
