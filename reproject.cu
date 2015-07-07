@@ -978,7 +978,12 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
                 DATATYPE aoff, DATATYPE boff, DATATYPE coff, int nx, int ny, int nphi, int ntheta, 
                 int sxy, int spt, DATATYPE r0, DATATYPE scale_out, DATATYPE xoff_out, DATATYPE yoff_out,
                 DATATYPE sintheta0, DATATYPE costheta0, int bounds, DATATYPE* x_in, DATATYPE* y_in, 
-                DATATYPE_INTERP2* img_orig, int sz, DATATYPE xgrid, DATATYPE ygrid, 
+#ifdef __USE_TEX
+                cudaTextureObject_t img_orig, 
+#else
+                DATATYPE_INTERP2* img_orig,
+#endif
+                int sz, DATATYPE xgrid, DATATYPE ygrid, 
                 DATATYPE_INTERP2* img_out, int *stat)
 {
   int mx, my, status;
@@ -1168,17 +1173,26 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
     int inx0 = IMG_PAD*y0+x0;
     inx0 %= IMG_PAD*IMG_PAD;
+
+#ifdef __USE_TEX
+#define FETCHX(A,B) tex1Dfetch<float>(A,2*(B))
+#define FETCHY(A,B) tex1Dfetch<float>(A,2*(B)+1)
+#else
+#define FETCHX(A,B) A[B].x
+#define FETCHY(A,B) A[B].y
+#endif
+
 #if __INTERP_LINEAR
-    DATATYPE_INTERP out_x = img_orig[inx0].x;
-    DATATYPE_INTERP out_y = img_orig[inx0].y;
+    DATATYPE_INTERP out_x = FETCHX(img_orig,inx0);
+    DATATYPE_INTERP out_y = FETCHY(img_orig,inx0);
     out_x *= (1-xfrac)*(1-yfrac);
     out_y *= (1-xfrac)*(1-yfrac);
-    out_x += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].x;
-    out_y += (1-xfrac)*yfrac*img_orig[inx0+IMG_PAD].y;
-    out_x += xfrac*(1-yfrac)*img_orig[inx0+1].x;
-    out_y += xfrac*(1-yfrac)*img_orig[inx0+1].y;
-    out_x += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].x;
-    out_y += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].y;
+    out_x += (1-xfrac)*yfrac*FETCHX(img_orig,inx0+IMG_PAD);
+    out_y += (1-xfrac)*yfrac*FETCHY(img_orig,inx0+IMG_PAD);
+    out_x += xfrac*(1-yfrac)*FETCHX(img_orig,inx0+1);
+    out_y += xfrac*(1-yfrac)*FETCHY(img_orig,inx0+1);
+    out_x += xfrac*yfrac*FETCHX(img_orig,inx0+IMG_PAD+1);
+    out_y += xfrac*yfrac*FETCHY(img_orig,inx0+IMG_PAD+1);
     img_out[iphi+mphi*itheta].x = out_x;
     img_out[iphi+mphi*itheta].y = out_y;
 #else
@@ -1439,7 +1453,12 @@ __global__ void coord_convert(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE
                DATATYPE r0, DATATYPE scale_out, DATATYPE xoff_out, DATATYPE yoff_out, DATATYPE sintheta0,
                DATATYPE costheta0, int bounds, int nphi, int ntheta, 
                int sxy, int spt, DATATYPE *x, DATATYPE *y, DATATYPE *phi, DATATYPE *theta, 
-               DATATYPE_INTERP2* img_orig, int sz, DATATYPE xgrid, DATATYPE ygrid, DATATYPE_INTERP2* img_out, 
+#ifdef __USE_TEX
+                cudaTextureObject_t img_orig, 
+#else
+                DATATYPE_INTERP2* img_orig,
+#endif
+               int sz, DATATYPE xgrid, DATATYPE ygrid, DATATYPE_INTERP2* img_out, 
                int *stat) {
   //coord_convert_dev(xi,eta, xoff, yoff, scale_in, aoff, boff, coff, nx, ny, sxy, spt, 
   //                  r0, scale_out, xoff_out, yoff_out, sintheta0, costheta0, bounds, 
@@ -1580,6 +1599,21 @@ int main(void) {
    if (!dimg_orig || !dimg_out) std::cerr << "ERROR: Failed GPU allocation." << std::endl;
    cudaMemcpy(dimg_orig, img_orig, sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD, cudaMemcpyHostToDevice);
    checkCudaError(__LINE__,__FILE__);
+#ifdef __USE_TEX
+   cudaResourceDesc resDesc;
+   memset(&resDesc, 0, sizeof(resDesc));
+   resDesc.resType = cudaResourceTypeLinear;
+   resDesc.res.linear.devPtr = (float*)dimg_orig;
+   resDesc.res.linear.desc.f = cudaChannelFormatKindFloat;
+   resDesc.res.linear.desc.x = 32;
+   resDesc.res.linear.sizeInBytes = IMG_PAD*IMG_PAD*sizeof(DATATYPE_INTERP2);
+
+   cudaTextureDesc texDesc;
+   memset(&texDesc, 0, sizeof(texDesc));
+   texDesc.readMode = cudaReadModeElementType;
+   cudaTextureObject_t img_tex=0;
+   cudaCreateTextureObject(&img_tex, &resDesc, &texDesc, NULL);
+#endif
 
    DATATYPE *dx, *dy, *dphi, *dtheta;
    int *dstat;
@@ -1588,6 +1622,7 @@ int main(void) {
    cudaMalloc(&dphi, sizeof(DATATYPE)*SIZE);
    cudaMalloc(&dtheta, sizeof(DATATYPE)*SIZE);
    cudaMalloc(&dstat, sizeof(int)*SIZE);
+
    
    cudaMemcpy(dx, x, sizeof(DATATYPE)*SIZE, cudaMemcpyHostToDevice);
    cudaMemcpy(dy, y, sizeof(DATATYPE)*SIZE, cudaMemcpyHostToDevice);
@@ -1601,7 +1636,13 @@ int main(void) {
    coord_convert<<<dim3((SIZEX+512-1)/512,SIZEY),512>>>(prj.pv[1], prj.pv[2], prj.x0, prj.y0, prj.w[0], 
                      prj.w[2], -prj.w[1], prj.w[3], SIZEX, SIZEY, prj.r0, prj.w[1], 
                      prj.x0, prj.y0, prj.pv[1], prj.pv[2], prj.bounds, SIZEX, SIZEY, 
-                     1, 1, dx, dy, dphi, dtheta, dimg_orig, IMG_SIZE*IMG_SIZE, xgrid, ygrid,
+                     1, 1, dx, dy, dphi, dtheta, 
+#ifdef __USE_TEX
+                     img_tex, 
+#else
+                     dimg_orig,
+#endif
+                     IMG_SIZE*IMG_SIZE, xgrid, ygrid,
                      dimg_out, dstat);
    cudaEventRecord(finish);
    cudaEventSynchronize(finish);
@@ -1642,6 +1683,9 @@ int main(void) {
    free(img_out);
    free(img_out2);
 
+#ifdef __USE_TEX
+   cudaDestroyTextureObject(img_tex);
+#endif
    cudaFree(dx);
    cudaFree(dy);
    cudaFree(dphi);
