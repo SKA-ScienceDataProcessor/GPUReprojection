@@ -1204,10 +1204,14 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     DATATYPE_INTERP2 ivals[4];
     inx0 -= IMG_PAD;
     for (int qq=0;qq<4;qq++,inx0+=IMG_PAD) {
-       ivals[qq] = img_orig[inx0-1]*w[0]
-                 + img_orig[inx0]*w[1]
-                 + img_orig[inx0+1]*w[2]
-                 + img_orig[inx0+2]*w[3];
+       ivals[qq].x = FETCHX(img_orig,inx0-1)*w[0]
+                 + FETCHX(img_orig,inx0)*w[1]
+                 + FETCHX(img_orig,inx0+1)*w[2]
+                 + FETCHX(img_orig,inx0+2)*w[3];
+       ivals[qq].y = FETCHY(img_orig,inx0-1)*w[0]
+                 + FETCHY(img_orig,inx0)*w[1]
+                 + FETCHY(img_orig,inx0+1)*w[2]
+                 + FETCHY(img_orig,inx0+2)*w[3];
     }
     DATATYPE_INTERP2 out = ivals[0]*(-yfrac*yfrac*yfrac+3*yfrac*yfrac-3*yfrac+1) +
                  ivals[1]*(3*yfrac*yfrac*yfrac-6*yfrac*yfrac-4) +

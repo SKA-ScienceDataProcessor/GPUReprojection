@@ -23,13 +23,14 @@ ifeq ($(INTERP),LINEAR)
 	CFLAGS += -D__INTERP_LINEAR
 endif
 ifeq ($(TEXTURE),1)
+ifeq ($(DATATYPE),double)
+	ERR = DATATYPE double is incompatible with TEXTURE=1
+endif
 	CFLAGS += -D__USE_TEX
 endif
 
 reproject: reproject.cu
-ifeq ($(TEXTURE),1)
-	ifeq ($(DATATYPE),double)
-		$(error DATATYPE double is incompatible with TEXTURE=1)
-	endif
+ifdef ERR
+	$(error $(ERR))
 endif
 	nvcc $(CFLAGS) -o reproject reproject.cu
