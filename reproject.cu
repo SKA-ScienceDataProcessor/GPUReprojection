@@ -34,6 +34,42 @@
 #define DATATYPE_INTERP2 DATATYPE2
 #endif
 
+__host__ __device__ float2 operator+(float2 in1, float2 in2) {
+   float2 ret;
+   ret.x = in1.x+in2.x;
+   ret.y = in1.y+in2.y;
+   return ret;
+}
+__host__ __device__ double2 operator+(double2 in1, double2 in2) {
+   double2 ret;
+   ret.x = in1.x+in2.x;
+   ret.y = in1.y+in2.y;
+   return ret;
+}
+__host__ __device__ double2 operator*(double2 in1, double in2) {
+   double2 ret;
+   ret.x = in1.x*in2;
+   ret.y = in1.y*in2;
+   return ret;
+}
+__host__ __device__ float2 operator*(float2 in1, float in2) {
+   float2 ret;
+   ret.x = in1.x*in2;
+   ret.y = in1.y*in2;
+   return ret;
+}
+__host__ __device__ double2 operator*(double in1, double2 in2) {
+   double2 ret;
+   ret.x = in1*in2.x;
+   ret.y = in1*in2.y;
+   return ret;
+}
+__host__ __device__ float2 operator*(float in1, float2 in2) {
+   float2 ret;
+   ret.x = in1*in2.x;
+   ret.y = in1*in2.y;
+   return ret;
+}
 void checkCudaError(int line, const char* filename) {
    cudaError_t err = cudaGetLastError();
    if (err) std::cerr << "Cuda error " << err << "(" << cudaGetErrorString(err) <<
@@ -392,7 +428,7 @@ int sins2x_alt(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *ph
 int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *phi, DATATYPE *theta, DATATYPE *x, DATATYPE *y, int *stat)
 
 {
-  int mphi, status;
+  int status;
   DATATYPE cosphi, costhe, sinphi, r, t, z, z1, z2;
   register int iphi, itheta, istat;
 
@@ -401,7 +437,7 @@ int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *p
 
   /* Do theta dependence. */
   for (itheta = 0; itheta < ntheta; itheta++) {
-  for (iphi = 0; iphi < mphi; iphi++) {
+  for (iphi = 0; iphi < nphi; iphi++) {
     t = (90.0 - fabs(theta[iphi*spt+nphi*itheta*spt]))*D2R;
     if (t < 1.0e-5) {
       if (theta[iphi*spt+nphi*itheta*spt] > 0.0) {
@@ -427,9 +463,9 @@ int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *p
       }
 
         sincos(phi[iphi*sxy+nphi*itheta*sxy], &sinphi, &cosphi); 
-        x[iphi*sxy+mphi*sxy*itheta] =  r*sinphi - prj->x0;
-        y[iphi*sxy+mphi*sxy*itheta] =  -r*cosphi - prj->y0;
-        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+        x[iphi*sxy+nphi*sxy*itheta] =  r*sinphi - prj->x0;
+        y[iphi*sxy+nphi*sxy*itheta] =  -r*cosphi - prj->y0;
+        stat[iphi*sxy+nphi*sxy*itheta] = istat;
     } else {
       /* "Synthesis" projection. */
       z *= prj->r0;
@@ -446,9 +482,9 @@ int sins2x_alt2(prjprm *prj, int nphi, int ntheta, int spt, int sxy, DATATYPE *p
           }
         }
 
-        x[iphi*sxy+mphi*sxy*itheta] = r*sinphi + z1;
-        y[iphi*sxy+mphi*sxy*itheta] = -r*cosphi + z2;
-        stat[iphi*sxy+mphi*sxy*itheta] = istat;
+        x[iphi*sxy+nphi*sxy*itheta] = r*sinphi + z1;
+        y[iphi*sxy+nphi*sxy*itheta] = -r*cosphi + z2;
+        stat[iphi*sxy+nphi*sxy*itheta] = istat;
       }
     }
   }
@@ -1124,7 +1160,6 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     }
   //}
 
-#if 1
     DATATYPE thisx = x-IMGX0;
     DATATYPE thisy = y-IMGY0;
     x0 = floorf(thisx/xgrid)+PAD_SIZE;
@@ -1133,6 +1168,7 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
     int inx0 = IMG_PAD*y0+x0;
     inx0 %= IMG_PAD*IMG_PAD;
+#if __INTERP_LINEAR
     DATATYPE_INTERP out_x = img_orig[inx0].x;
     DATATYPE_INTERP out_y = img_orig[inx0].y;
     out_x *= (1-xfrac)*(1-yfrac);
@@ -1145,6 +1181,26 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     out_y += xfrac*yfrac*img_orig[inx0+IMG_PAD+1].y;
     img_out[iphi+mphi*itheta].x = out_x;
     img_out[iphi+mphi*itheta].y = out_y;
+#else
+    DATATYPE w[4];
+    w[0] = (-xfrac*xfrac*xfrac + 3*xfrac*xfrac - 3*xfrac + 1)/6.0;
+    w[1] = (3*xfrac*xfrac*xfrac - 6*xfrac*xfrac + 4)/6.0;
+    w[2] = (-3*xfrac*xfrac*xfrac + 3*xfrac*xfrac + 3*xfrac + 1)/6.0;
+    w[3] = xfrac*xfrac*xfrac/6.0;
+    DATATYPE_INTERP2 ivals[4];
+    inx0 -= IMG_PAD;
+    for (int qq=0;qq<4;qq++,inx0+=IMG_PAD) {
+       ivals[qq] = img_orig[inx0-1]*w[0]
+                 + img_orig[inx0]*w[1]
+                 + img_orig[inx0+1]*w[2]
+                 + img_orig[inx0+2]*w[3];
+    }
+    DATATYPE_INTERP2 out = ivals[0]*(-yfrac*yfrac*yfrac+3*yfrac*yfrac-3*yfrac+1) +
+                 ivals[1]*(3*yfrac*yfrac*yfrac-6*yfrac*yfrac-4) +
+                 ivals[2]*(-3*yfrac*yfrac*yfrac+3*yfrac*yfrac+3*yfrac+1) +
+                 ivals[3]*yfrac*yfrac*yfrac;
+    img_out[iphi+mphi*itheta] = out *(1.0/6.0);
+   
 #endif
   //return status;
 }
@@ -1487,12 +1543,34 @@ int main(void) {
       int y0 = floorf(thisy/ygrid)+PAD_SIZE;
       DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
       int inx0 = IMG_PAD*y0+x0;
+#ifdef __INTERP_LINEAR
       DATATYPE_INTERP2 g00 = img_orig[inx0];
       DATATYPE_INTERP2 g01 = img_orig[inx0+IMG_PAD];
       DATATYPE_INTERP2 g10 = img_orig[inx0+1];
       DATATYPE_INTERP2 g11 = img_orig[inx0+IMG_PAD+1];
       img_out[z].x = g00.x*(1-xfrac)*(1-yfrac)+g01.x*(1-xfrac)*yfrac+g10.x*xfrac*(1-yfrac)+g11.x*xfrac*yfrac;
       img_out[z].y = g00.y*(1-xfrac)*(1-yfrac)+g01.y*(1-xfrac)*yfrac+g10.y*xfrac*(1-yfrac)+g11.y*xfrac*yfrac;
+#else
+      DATATYPE w[4];
+      w[0] = (-xfrac*xfrac*xfrac + 3*xfrac*xfrac - 3*xfrac + 1)/6.0;
+      w[1] = (3*xfrac*xfrac*xfrac - 6*xfrac*xfrac + 4)/6.0;
+      w[2] = (-3*xfrac*xfrac*xfrac + 3*xfrac*xfrac + 3*xfrac + 1)/6.0;
+      w[3] = xfrac*xfrac*xfrac/6.0;
+      DATATYPE_INTERP2 ivals[4];
+      inx0 -= IMG_PAD;
+      for (int qq=0;qq<4;qq++,inx0+=IMG_PAD) {
+         ivals[qq] = img_orig[inx0-1]*w[0]
+                   + img_orig[inx0]*w[1]
+                   + img_orig[inx0+1]*w[2]
+                   + img_orig[inx0+2]*w[3];
+      }
+      img_out[z] = ivals[0]*(-yfrac*yfrac*yfrac+3*yfrac*yfrac-3*yfrac+1) +
+                   ivals[1]*(3*yfrac*yfrac*yfrac-6*yfrac*yfrac-4) +
+                   ivals[2]*(-3*yfrac*yfrac*yfrac+3*yfrac*yfrac+3*yfrac+1) +
+                   ivals[3]*yfrac*yfrac*yfrac;
+      img_out[z] = img_out[z] *(1.0/6.0);
+   
+#endif
    }
 
    /*** GPU memory ***/

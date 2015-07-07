@@ -19,6 +19,9 @@ ifeq ($(FASTMATH),0)
 else
 	CFLAGS += -use_fast_math
 endif
+ifeq ($(INTERP),LINEAR)
+	CFLAGS += -D__INTERP_LINEAR
+endif
 
 reproject: reproject.cu
 	nvcc $(CFLAGS) -o reproject reproject.cu

@@ -9,3 +9,4 @@ DEBUG=0,1               Compiles with debug flags
 DATATYPE=double,float   Specifies precision. Default is double
 DATATYPE_INTERP=        Specifies precision for interpolation. Default is DATATYPE.
          double,float
+INTERP=LINEAR           linear interpolation. Default is bicubic spline
