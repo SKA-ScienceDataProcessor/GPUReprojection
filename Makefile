@@ -2,8 +2,9 @@ PTXASFLAGS=-Xptxas -v,-abi=no,-dlcm=cg
 
 ifeq ($(DEBUG),1)
 	CFLAGS += -g -G -lineinfo
+else
+	CFLAGS += $(PTXASFLAGS)
 endif
-CFLAGS += $(PTXASFLAGS)
 CFLAGS += -arch=sm_35
 
 ifdef DATATYPE
