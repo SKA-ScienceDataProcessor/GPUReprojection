@@ -976,10 +976,10 @@ void cc_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATATYPE sc
 __device__ float4 get_tex_params(float A, float B, float C, float D) 
 {
    float4 ret;
-   ret.x = (C+A)*(B+A)/A;
-   ret.y = C/(C+A);
-   ret.z = B/(B+A);
-   ret.w = A*B*C-D;
+   ret.z = (C+A)*(B+A)/A; //gamma (scale)
+   ret.x = C/(C+A);       //alpha (x-offset)
+   ret.y = B/(B+A);       //beta  (y-offset)
+   ret.w = B*C/A-D;       //nu (remainder)
    return ret;
 }
 
@@ -994,10 +994,11 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
                 int sz, DATATYPE xgrid, DATATYPE ygrid, 
                 DATATYPE_INTERP2* img_out, int *stat)
 {
+  DATATYPE x,y;
   int mx, my, status;
   const DATATYPE tol = 1.0e-13;
   DATATYPE a, b, c, d, r2, sinth1, sinth2, sinthe, x0, x1, xy, y0, y02,
-         y1, z, x, y;
+         y1, z;
   int ix, iy;
   DATATYPE lphi, ltheta;
 
@@ -1172,14 +1173,14 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
       //}
     }
   //}
-
-    DATATYPE thisx = x-IMGX0;
-    DATATYPE thisy = y-IMGY0;
-    x0 = floorf(thisx/xgrid)+PAD_SIZE;
-    DATATYPE xfrac = thisx/xgrid-x0+PAD_SIZE;
-    y0 = floorf(thisy/ygrid)+PAD_SIZE;
-    DATATYPE yfrac = thisy/ygrid-y0+PAD_SIZE;
-    int inx0 = IMG_PAD*y0+x0;
+  
+    DATATYPE_INTERP thisx = x-IMGX0;
+    DATATYPE_INTERP thisy = y-IMGY0;
+    int x00 = floorf(thisx/xgrid)+PAD_SIZE;
+    DATATYPE_INTERP xfrac = thisx/xgrid-x00+PAD_SIZE;
+    int y00 = floorf(thisy/ygrid)+PAD_SIZE;
+    DATATYPE_INTERP yfrac = thisy/ygrid-y00+PAD_SIZE;
+    int inx0 = IMG_PAD*y00+x00;
     inx0 %= IMG_PAD*IMG_PAD;
 
 #ifdef __USE_TEX
@@ -1193,66 +1194,117 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
 #endif
 
 #if __INTERP_LINEAR
-    DATATYPE_INTERP out_x = FETCHX(img_orig,x0,y0);
-    DATATYPE_INTERP out_y = FETCHY(img_orig,x0,y0);
+    DATATYPE_INTERP out_x = FETCHX(img_orig,x00,y00);
+    DATATYPE_INTERP out_y = FETCHY(img_orig,x00,y00);
     out_x *= (1-xfrac)*(1-yfrac);
     out_y *= (1-xfrac)*(1-yfrac);
-    out_x += (1-xfrac)*yfrac*FETCHX(img_orig,x0,y0+1);
-    out_y += (1-xfrac)*yfrac*FETCHY(img_orig,x0,y0+1);
-    out_x += xfrac*(1-yfrac)*FETCHX(img_orig,x0+1,y0);
-    out_y += xfrac*(1-yfrac)*FETCHY(img_orig,x0+1,y0);
-    out_x += xfrac*yfrac*FETCHX(img_orig,x0+1,y0+1);
-    out_y += xfrac*yfrac*FETCHY(img_orig,x0+1,y0+1);
+    out_x += (1-xfrac)*yfrac*FETCHX(img_orig,x00,y00+1);
+    out_y += (1-xfrac)*yfrac*FETCHY(img_orig,x00,y00+1);
+    out_x += xfrac*(1-yfrac)*FETCHX(img_orig,x00+1,y00);
+    out_y += xfrac*(1-yfrac)*FETCHY(img_orig,x00+1,y00);
+    out_x += xfrac*yfrac*FETCHX(img_orig,x00+1,y00+1);
+    out_y += xfrac*yfrac*FETCHY(img_orig,x00+1,y00+1);
     img_out[iphi+mphi*itheta].x = out_x;
     img_out[iphi+mphi*itheta].y = out_y;
 #else
-    DATATYPE w[4];
+    DATATYPE_INTERP w[4];
     w[0] = (-xfrac*xfrac*xfrac + 3*xfrac*xfrac - 3*xfrac + 1)/6.0;
     w[1] = (3*xfrac*xfrac*xfrac - 6*xfrac*xfrac + 4)/6.0;
     w[2] = (-3*xfrac*xfrac*xfrac + 3*xfrac*xfrac + 3*xfrac + 1)/6.0;
     w[3] = xfrac*xfrac*xfrac/6.0;
     DATATYPE_INTERP2 ivals[4];
     inx0 -= IMG_PAD;
-    y0--;
   #ifdef __USE_TEX 
-    //#ifdef __SLOW_TEX
-    #if 1
+    #ifdef __SLOW_TEX
+    y0--;
     for (int qq=0;qq<4;qq++,y0++) {
-       ivals[qq].x = FETCHX(tex_orig,x0-1,y0)*w[0];
-      ivals[qq].x+= FETCHX(tex_orig,x0,y0)*w[1];
-      ivals[qq].x+= FETCHX(tex_orig,x0+1,y0)*w[2];
-      ivals[qq].x+= FETCHX(tex_orig,x0+2,y0)*w[3];
-       ivals[qq].y = FETCHY(tex_orig,x0-1,y0)*w[0];
-      ivals[qq].y+= FETCHY(tex_orig,x0,y0)*w[1];
-      ivals[qq].y+= FETCHY(tex_orig,x0+1,y0)*w[2];
-      ivals[qq].y+= FETCHY(tex_orig,x0+2,y0)*w[3];
+       ivals[qq].x = FETCHX(tex_orig,x00-1,y00)*w[0];
+      ivals[qq].x+= FETCHX(tex_orig,x00,y00)*w[1];
+      ivals[qq].x+= FETCHX(tex_orig,x00+1,y00)*w[2];
+      ivals[qq].x+= FETCHX(tex_orig,x00+2,y00)*w[3];
+       ivals[qq].y = FETCHY(tex_orig,x00-1,y00)*w[0];
+      ivals[qq].y+= FETCHY(tex_orig,x00,y00)*w[1];
+      ivals[qq].y+= FETCHY(tex_orig,x00+1,y00)*w[2];
+      ivals[qq].y+= FETCHY(tex_orig,x00+2,y00)*w[3];
     }
+    y0-=3;
     #else
-    for (int qq=0;qq<4;qq++,y0++) {
-       ivals[qq].x = (w[0]+w[1])*FETCHX(tex_orig,x0-1+w[1]/(w[0]+w[1]),y0) +
-                     (w[2]+w[3])*FETCHX(tex_orig,x0+1+w[3]/(w[2]+w[3]),y0);
-       ivals[qq].y = (w[0]+w[1])*FETCHY(tex_orig,x0-1+w[1]/(w[0]+w[1]),y0) +
-                     (w[2]+w[3])*FETCHY(tex_orig,x0+1+w[3]/(w[2]+w[3]),y0);
+       #if 0
+       DATATYPE_INTERP wy[4];
+       wy[0] = (-yfrac*yfrac*yfrac + 3*yfrac*yfrac - 3*yfrac + 1);
+       wy[1] = (3*yfrac*yfrac*yfrac - 6*yfrac*yfrac - 4);
+       wy[2] = (-3*yfrac*yfrac*yfrac + 3*yfrac*yfrac + 3*yfrac + 1);
+       wy[3] = yfrac*yfrac*yfrac;
+       DATATYPE_INTERP2 out;
+       out.x = out.y = 0.0;
+       DATATYPE_INTERP *wx = w;
+       //for (int qx=0;qx<4;qx++) {
+       //   for (int qy=0;qy<4;qy++) {
+       //       out.x += FETCHX(tex_orig, x00-1+qx, y00-1+qy)*wx[qx]*wy[qy];
+       //       out.y += FETCHY(tex_orig, x00-1+qx, y00-1+qy)*wx[qx]*wy[qy];
+       //   }
+      // }
+       float4 params;
+       DATATYPE_INTERP leftover[4];
+       params = get_tex_params(wx[0]*wy[0],wx[0]*wy[1],wx[1]*wy[0],wx[1]*wy[1]);
+       out.x += params.z*FETCHX(tex_orig,x00-1+params.x,y00-1+params.y);
+       out.y += params.z*FETCHY(tex_orig,x00-1+params.x,y00-1+params.y);
+       leftover[0] = params.w;
+
+       params = get_tex_params(wx[0]*wy[3],wx[0]*wy[2],wx[1]*wy[3],wx[1]*wy[2]);
+       out.x += params.z*FETCHX(tex_orig,x00-1+params.x,y00+2-params.y);
+       out.y += params.z*FETCHY(tex_orig,x00-1+params.x,y00+2-params.y);
+       leftover[1] = params.w;
+
+       params = get_tex_params(wx[3]*wy[0],wx[3]*wy[1],wx[2]*wy[0],wx[2]*wy[1]);
+       out.x += params.z*FETCHX(tex_orig,x00+2-params.x,y00-1+params.y);
+       out.y += params.z*FETCHY(tex_orig,x00+2-params.x,y00-1+params.y);
+       leftover[2] = params.w;
+
+       params = get_tex_params(wx[3]*wy[3],wx[3]*wy[2],wx[2]*wy[3],wx[2]*wy[2]);
+       out.x += params.z*FETCHX(tex_orig,x00+2-params.x,y00+2-params.y);
+       out.y += params.z*FETCHY(tex_orig,x00+2-params.x,y00+2-params.y);
+       leftover[3] = params.w;
+
+       params = get_tex_params(leftover[0], leftover[1], leftover[2], leftover[3]);
+       out.x += params.z*FETCHX(tex_orig,x00+params.x,y00+params.y);
+       out.y += params.z*FETCHY(tex_orig,x00+params.x,y00+params.y);
+       out.x += params.w*FETCHX(tex_orig,x00+1,y00+1);
+       out.y += params.w*FETCHY(tex_orig,x00+1,y00+1);
+       #else
+    y00--;
+    for (int qq=0;qq<4;qq++,y00++) {
+       ivals[qq].x = (w[0]+w[1])*FETCHX(tex_orig,x00-1+w[1]/(w[0]+w[1]),y00) +
+                     (w[2]+w[3])*FETCHX(tex_orig,x00+1+w[3]/(w[2]+w[3]),y00);
+       ivals[qq].y = (w[0]+w[1])*FETCHY(tex_orig,x00-1+w[1]/(w[0]+w[1]),y00) +
+                     (w[2]+w[3])*FETCHY(tex_orig,x00+1+w[3]/(w[2]+w[3]),y00);
     
     
     }
+    y00-=3;
+       #endif
     #endif
   #else
-    for (int qq=0;qq<4;qq++,y0++) {
-       ivals[qq].x = FETCHX(img_orig,(int)x0-1,(int)y0)*w[0]
-                 + FETCHX(img_orig,(int)x0,(int)y0)*w[1]
-                 + FETCHX(img_orig,(int)x0+1,(int)y0)*w[2]
-                 + FETCHX(img_orig,(int)x0+2,(int)y0)*w[3];
-       ivals[qq].y = FETCHY(img_orig,(int)x0-1,(int)y0)*w[0]
-                 + FETCHY(img_orig,(int)x0,(int)y0)*w[1]
-                 + FETCHY(img_orig,(int)x0+1,(int)y0)*w[2]
-                 + FETCHY(img_orig,(int)x0+2,(int)y0)*w[3];
+    y00--;
+    for (int qq=0;qq<4;qq++,y00++) {
+       ivals[qq].x = FETCHX(img_orig,(int)x00-1,(int)y00)*w[0]
+                 + FETCHX(img_orig,(int)x00,(int)y00)*w[1]
+                 + FETCHX(img_orig,(int)x00+1,(int)y00)*w[2]
+                 + FETCHX(img_orig,(int)x00+2,(int)y00)*w[3];
+       ivals[qq].y = FETCHY(img_orig,(int)x00-1,(int)y00)*w[0]
+                 + FETCHY(img_orig,(int)x00,(int)y00)*w[1]
+                 + FETCHY(img_orig,(int)x00+1,(int)y00)*w[2]
+                 + FETCHY(img_orig,(int)x00+2,(int)y00)*w[3];
     }
+    y0-=3;
   #endif
+    #if 0
+    #else
     DATATYPE_INTERP2 out = ivals[0]*(-yfrac*yfrac*yfrac+3*yfrac*yfrac-3*yfrac+1) +
                  ivals[1]*(3*yfrac*yfrac*yfrac-6*yfrac*yfrac-4) +
                  ivals[2]*(-3*yfrac*yfrac*yfrac+3*yfrac*yfrac+3*yfrac+1) +
                  ivals[3]*yfrac*yfrac*yfrac;
+    #endif
     img_out[iphi+mphi*itheta] = out *(1.0/6.0);
    
 #endif

@@ -14,6 +14,8 @@ else
 endif
 ifdef DATATYPE_INTERP
 	CFLAGS += -DDATATYPE_INTERP=$(DATATYPE_INTERP) -DDATATYPE_INTERP2=$(DATATYPE_INTERP)2
+else
+	DATATYPE_INTERP=DATATYPE
 endif
 
 ifeq ($(FASTMATH),0)
@@ -24,7 +26,7 @@ ifeq ($(INTERP),LINEAR)
 	CFLAGS += -D__INTERP_LINEAR
 endif
 ifeq ($(TEXTURE),1)
-ifeq ($(DATATYPE),double)
+ifeq ($(DATATYPE_INTERP),double)
 	ERR = DATATYPE double is incompatible with TEXTURE=1
 endif
 	CFLAGS += -D__USE_TEX
