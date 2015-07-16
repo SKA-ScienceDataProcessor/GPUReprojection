@@ -26,10 +26,14 @@ ifeq ($(INTERP),LINEAR)
 	CFLAGS += -D__INTERP_LINEAR
 endif
 ifeq ($(TEXTURE),1)
-ifeq ($(DATATYPE_INTERP),double)
-	ERR = DATATYPE double is incompatible with TEXTURE=1
-endif
 	CFLAGS += -D__USE_TEX
+ifeq ($(DATATYPE_INTERP),double)
+	#Double precision cannot use texture interpolation
+	CFLAGS += -D__SLOW_TEX
+endif
+ifeq ($(SLOW_TEX),1)
+	CFLAGS += -D__SLOW_TEX
+endif
 endif
 
 reproject: reproject.cu

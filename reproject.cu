@@ -13,10 +13,10 @@
 #define SIZEY 4096
 #define SIZE (SIZEX*SIZEY)
 
-#define XLL 0.45
-#define XUR 1.44
-#define YLL -0.98
-#define YUR 0.01
+#define XLL 0.0
+#define XUR 0.25
+#define YLL -0.25
+#define YUR 0.1
 
 #define R2D (180/3.1415926)
 #define D2R (3.1415926/180)
@@ -24,10 +24,10 @@
 #define PAD_SIZE 2
 #define IMG_SIZE 4096
 #define IMG_PAD (IMG_SIZE+2*PAD_SIZE)
-#define IMGX0 0.0
-#define IMGX1 0.4
-#define IMGY0 -0.4
-#define IMGY1 0.0
+#define IMGX0 XLL
+#define IMGX1 XUR
+#define IMGY0 YLL
+#define IMGY1 YUR
 
 #ifndef DATATYPE_INTERP
 #define DATATYPE_INTERP DATATYPE
@@ -69,6 +69,51 @@ __host__ __device__ float2 operator*(float in1, float2 in2) {
    ret.x = in1*in2.x;
    ret.y = in1*in2.y;
    return ret;
+}
+template <class T, class U>
+__inline__ __device__ T tex_fetch2D(cudaTextureObject_t t, U i, U j);
+
+template<>
+__inline__ __device__ double tex_fetch2D<double>(cudaTextureObject_t t, int i, int j)
+{
+int2 v = tex2D<int2>(t,i,j);
+return __hiloint2double(v.y, v.x);
+}
+template<>
+__inline__ __device__ float tex_fetch2D<float>(cudaTextureObject_t t, int i, int j)
+{
+float v = tex2D<float>(t,i,j);
+return v;
+}
+template<>
+__inline__ __device__ double tex_fetch2D<double>(cudaTextureObject_t t, double i, double j)
+{
+int2 v = tex2D<int2>(t,(float)i,(float)j);
+return __hiloint2double(v.y, v.x);
+}
+template<>
+__inline__ __device__ float tex_fetch2D<float>(cudaTextureObject_t t, float i, float j)
+{
+float v = tex2D<float>(t,i,j);
+return v;
+}
+template <class U>
+cudaChannelFormatDesc channel_create();
+template<>
+cudaChannelFormatDesc channel_create<float>() {
+
+   cudaChannelFormatDesc channel = 
+               cudaCreateChannelDesc(32, 0, 0, 0,
+                                     cudaChannelFormatKindFloat);
+   return channel;
+}
+template<>
+cudaChannelFormatDesc channel_create<double>() {
+
+   cudaChannelFormatDesc channel = 
+               cudaCreateChannelDesc(32, 32, 0, 0,
+                                     cudaChannelFormatKindFloat);
+   return channel;
 }
 void checkCudaError(int line, const char* filename) {
    cudaError_t err = cudaGetLastError();
@@ -340,7 +385,7 @@ int sinx2s(struct prjprm *prj, int nx, int ny, int sxy, int spt, DATATYPE *x, DA
         }
 
         x1 = -y0 + eta*z;
-        y1 =  x0 -  xi*z;
+        y1 =  x0 - xi*z;
         if (x1 == 0.0 && y1 == 0.0) {
           *phip = 0.0;
         } else {
@@ -1176,9 +1221,9 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
   
     DATATYPE_INTERP thisx = x-IMGX0;
     DATATYPE_INTERP thisy = y-IMGY0;
-    int x00 = floorf(thisx/xgrid)+PAD_SIZE;
+    DATATYPE_INTERP x00 = floorf(thisx/xgrid)+PAD_SIZE;
     DATATYPE_INTERP xfrac = thisx/xgrid-x00+PAD_SIZE;
-    int y00 = floorf(thisy/ygrid)+PAD_SIZE;
+    DATATYPE_INTERP y00 = floorf(thisy/ygrid)+PAD_SIZE;
     DATATYPE_INTERP yfrac = thisy/ygrid-y00+PAD_SIZE;
     int inx0 = IMG_PAD*y00+x00;
     inx0 %= IMG_PAD*IMG_PAD;
@@ -1186,8 +1231,8 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
 #ifdef __USE_TEX
 //#define FETCHX(A,XX,YY) tex1Dfetch<float>(A,2*(B))
 //#define FETCHY(A,XX,YY) tex1Dfetch<float>(A,2*(B)+1)
-#define FETCHX(A,XX,YY) tex2D<float>(A,XX+(float)0.5,(YY)+(float)0.5)
-#define FETCHY(A,XX,YY) tex2D<float>(A,XX+(float)0.5,(YY)+IMG_PAD+(float)0.5)
+#define FETCHX(A,XX,YY) tex_fetch2D<DATATYPE_INTERP>(A,XX+(DATATYPE_INTERP)0.5,(YY)+(DATATYPE_INTERP)0.5)
+#define FETCHY(A,XX,YY) tex_fetch2D<DATATYPE_INTERP>(A,XX+(DATATYPE_INTERP)0.5,(YY)+IMG_PAD+(DATATYPE_INTERP)0.5)
 #else
 #define FETCHX(A,XX,YY) A[XX+(YY)*IMG_PAD]
 #define FETCHY(A,XX,YY) A[XX+((YY)+IMG_PAD)*IMG_PAD]
@@ -1216,8 +1261,8 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
     inx0 -= IMG_PAD;
   #ifdef __USE_TEX 
     #ifdef __SLOW_TEX
-    y0--;
-    for (int qq=0;qq<4;qq++,y0++) {
+    y00--;
+    for (int qq=0;qq<4;qq++,y00++) {
        ivals[qq].x = FETCHX(tex_orig,x00-1,y00)*w[0];
       ivals[qq].x+= FETCHX(tex_orig,x00,y00)*w[1];
       ivals[qq].x+= FETCHX(tex_orig,x00+1,y00)*w[2];
@@ -1227,9 +1272,13 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
       ivals[qq].y+= FETCHY(tex_orig,x00+1,y00)*w[2];
       ivals[qq].y+= FETCHY(tex_orig,x00+2,y00)*w[3];
     }
-    y0-=3;
+    y00-=3;
     #else
        #if 0
+       //This is an experimental attempt to use texture interpolation in two directions
+       // to accomplish the linear combination. Similar to the technique used in one direction
+       // It reduces the number of texture fetches (from 8 to 5), but hurts performance overall
+       // by requiring more floating point operations
        DATATYPE_INTERP wy[4];
        wy[0] = (-yfrac*yfrac*yfrac + 3*yfrac*yfrac - 3*yfrac + 1);
        wy[1] = (3*yfrac*yfrac*yfrac - 6*yfrac*yfrac - 4);
@@ -1238,14 +1287,13 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
        DATATYPE_INTERP2 out;
        out.x = out.y = 0.0;
        DATATYPE_INTERP *wx = w;
-       //for (int qx=0;qx<4;qx++) {
-       //   for (int qy=0;qy<4;qy++) {
-       //       out.x += FETCHX(tex_orig, x00-1+qx, y00-1+qy)*wx[qx]*wy[qy];
-       //       out.y += FETCHY(tex_orig, x00-1+qx, y00-1+qy)*wx[qx]*wy[qy];
-       //   }
-      // }
        float4 params;
        DATATYPE_INTERP leftover[4];
+       //One texture fetch in each corner. leftover is an additional parameter
+       //needed to give the overdetermined system an additional degree of freedom.
+       //These leftovers are adjustments to the coefficients for the four central points
+       //to make the linear combo expressible in a single texture read. These will be
+       //restored in a final step
        params = get_tex_params(wx[0]*wy[0],wx[0]*wy[1],wx[1]*wy[0],wx[1]*wy[1]);
        out.x += params.z*FETCHX(tex_orig,x00-1+params.x,y00-1+params.y);
        out.y += params.z*FETCHY(tex_orig,x00-1+params.x,y00-1+params.y);
@@ -1266,6 +1314,7 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
        out.y += params.z*FETCHY(tex_orig,x00+2-params.x,y00+2-params.y);
        leftover[3] = params.w;
 
+       //Now, add in the leftover bits for the four centrel points
        params = get_tex_params(leftover[0], leftover[1], leftover[2], leftover[3]);
        out.x += params.z*FETCHX(tex_orig,x00+params.x,y00+params.y);
        out.y += params.z*FETCHY(tex_orig,x00+params.x,y00+params.y);
@@ -1296,7 +1345,7 @@ void reproject_dev(DATATYPE xi, DATATYPE eta, DATATYPE xoff, DATATYPE yoff, DATA
                  + FETCHY(img_orig,(int)x00+1,(int)y00)*w[2]
                  + FETCHY(img_orig,(int)x00+2,(int)y00)*w[3];
     }
-    y0-=3;
+    y00-=3;
   #endif
     #if 0
     #else
@@ -1601,22 +1650,26 @@ int main(void) {
    /***   Initialize ***/
    srand(2541617);
    prj.flag = SIN;
-   prj.pv[0] = (rand()*1.0)/RAND_MAX;
    prj.pv[1] = (rand()*1.0)/RAND_MAX;
    prj.pv[2] = (rand()*1.0)/RAND_MAX;
    prj.x0=0;
    prj.y0=0;
-   prj.r0=0.663;
-   prj.w[0] = (rand()*1.0)/RAND_MAX;
-   prj.w[1] = 0.0;
+   prj.r0=0.5;
+   //prj.w[0] = (rand()*1.0)/RAND_MAX;
    //prj.w[1] = (rand()*1.0)/RAND_MAX;
-   prj.w[2] = (rand()*1.0)/RAND_MAX;
-   prj.w[3] = (rand()*1.0)/RAND_MAX;
+   //prj.w[2] = (rand()*1.0)/RAND_MAX;
+   //prj.w[3] = (rand()*1.0)/RAND_MAX;
+   prj.w[0] = 1/prj.r0;
+   prj.w[1] = -2.0;
+   //prj.w[2] = prj.w[1] + (rand()*1.0)/RAND_MAX;
+   //prj.w[3] = prj.w[1] - (rand()*1.0)/RAND_MAX;
+   prj.w[2]=-2.0;
+   prj.w[3]=-2.0;
    prj.bounds = 0;
 
    for (int z=0;z<SIZE;z++) {
-      x[z] = XLL + (z%SIZEX)*(XUR/SIZEX);
-      y[z] = YLL + (z/SIZEX)*(YUR/SIZEY);
+      x[z] = -0.2 + (z%SIZEX)*(0.4/SIZEX);
+      y[z] = -0.2 + (z/SIZEX)*(0.4/SIZEY);
    }
 
    DATATYPE_INTERP2* img_orig;
@@ -1629,6 +1682,13 @@ int main(void) {
    for (int z=0;z<IMG_PAD*IMG_PAD;z++) {
       img_orig[z].x = (rand()*1.0)/RAND_MAX;
       img_orig[z].y = (rand()*1.0)/RAND_MAX;
+      if ((z%IMG_PAD)<PAD_SIZE ||
+          (z%IMG_PAD)>IMG_PAD+PAD_SIZE ||
+          (z/IMG_PAD)<PAD_SIZE ||
+          (z/IMG_PAD)>IMG_PAD+PAD_SIZE) {
+         img_orig[z].x = 0.0;
+         img_orig[z].y = 0.0;
+      }
    }
 
    /*** Execute x2s two ways ***/
@@ -1675,10 +1735,14 @@ int main(void) {
       DATATYPE_INTERP2 ivals[4];
       inx0 -= IMG_PAD;
       for (int qq=0;qq<4;qq++,inx0+=IMG_PAD) {
-         ivals[qq] = img_orig[inx0-1]*w[0]
-                   + img_orig[inx0]*w[1]
-                   + img_orig[inx0+1]*w[2]
-                   + img_orig[inx0+2]*w[3];
+         ivals[qq].x = 0.0;
+         ivals[qq].y = 0.0;
+         if (y0-1+qq<0 && y0-1+qq>=IMG_PAD) continue;
+         for (int rr=0;rr<4;rr++) 
+         {
+             if (x0-1+rr>=0 && x0-1+rr<IMG_PAD)
+                ivals[qq] = ivals[qq] + img_orig[inx0-1+rr]*w[rr];
+         }
       }
       img_out[z] = ivals[0]*(-yfrac*yfrac*yfrac+3*yfrac*yfrac-3*yfrac+1) +
                    ivals[1]*(3*yfrac*yfrac*yfrac-6*yfrac*yfrac-4) +
@@ -1700,21 +1764,20 @@ int main(void) {
 #ifdef __USE_TEX
    cudaMalloc(&dimg_origT, sizeof(DATATYPE_INTERP2)*IMG_PAD*IMG_PAD);
    checkCudaError(__LINE__,__FILE__);
-   separate_complex<<<(IMG_PAD*IMG_PAD+511)/512,512>>>((float*)dimg_origT, dimg_orig, IMG_PAD*IMG_PAD);
+   separate_complex<<<(IMG_PAD*IMG_PAD+511)/512,512>>>((DATATYPE_INTERP*)dimg_origT, dimg_orig, IMG_PAD*IMG_PAD);
    checkCudaError(__LINE__,__FILE__);
        // Allocate CUDA array in device memory
-   cudaChannelFormatDesc channelDesc =
-               cudaCreateChannelDesc(32, 0, 0, 0,
-                                     cudaChannelFormatKindFloat);
+   cudaChannelFormatDesc channelDesc = channel_create<DATATYPE_INTERP>();
    cudaArray* cuArray;
    cudaMallocArray(&cuArray, &channelDesc, IMG_PAD, 2*IMG_PAD);
+   checkCudaError(__LINE__,__FILE__);
 
    // Copy to device memory some data located at address h_data
    // in host memory 
-   //TODO Remove
-   cudaMemcpyToArray(cuArray, 0, 0, dimg_origT, sizeof(float)*2*IMG_PAD*IMG_PAD,
+   cudaMemcpyToArray(cuArray, 0, 0, dimg_origT, sizeof(DATATYPE_INTERP)*2*IMG_PAD*IMG_PAD,
                       cudaMemcpyDeviceToDevice);
 
+   checkCudaError(__LINE__,__FILE__);
    // Specify texture
    struct cudaResourceDesc resDesc;
    memset(&resDesc, 0, sizeof(resDesc));
@@ -1728,8 +1791,8 @@ int main(void) {
    // Specify texture object parameters
    struct cudaTextureDesc texDesc;
    memset(&texDesc, 0, sizeof(texDesc));
-   texDesc.addressMode[0]   = cudaAddressModeWrap;
-   texDesc.addressMode[1]   = cudaAddressModeWrap;
+   texDesc.addressMode[0]   = cudaAddressModeClamp;
+   texDesc.addressMode[1]   = cudaAddressModeClamp;
    texDesc.filterMode       = cudaFilterModeLinear;
    texDesc.readMode         = cudaReadModeElementType;
    texDesc.normalizedCoords = 0;
@@ -1787,11 +1850,12 @@ int main(void) {
    double maxerr = 0.0;
    int maxerrinx = -1;
    for (int z=0;z<SIZE;z++) {
-      if (0==z%1000 && 
+      if ((1 || 0==z%1000) && 
           (fabs(img_out2[z].x-img_out[z].x) > 0.0001 ||
            fabs(img_out2[z].y-img_out[z].y) > 0.0001  ) ) {
          std::cout << "Mismatch for z = " << z << ": " << img_out2[z].x << ", " <<img_out2[z].y << " != "
                    << img_out[z].x << ", " << img_out[z].y << std::endl;
+         std::cout << "xy(out) = " << x2[z] << ", " << y2[z] << std::endl;
       }
       if (fabs(img_out2[z].x-img_out[z].x > maxerr)) {maxerr = fabs(img_out2[z].x-img_out[z].x); maxerrinx=z;}
       if (fabs(img_out2[z].y-img_out[z].y > maxerr)) {maxerr = fabs(img_out2[z].y-img_out[z].y); maxerrinx=z;}
